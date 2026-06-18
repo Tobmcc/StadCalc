@@ -1,0 +1,777 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bowl">
+<meta name="theme-color" content="#17160F">
+<title>Bowl — capacity estimator</title>
+<link rel="manifest" id="pwaManifest">
+<link rel="apple-touch-icon" id="pwaIcon">
+<script>
+// ── PWA: inline manifest + service worker (single-file, no server needed) ──
+const ICON_SVG=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="110" fill="#17160F"/><rect x="80" y="280" width="352" height="80" rx="8" fill="#4E8C6A" opacity=".9"/><rect x="60" y="196" width="60" height="100" rx="4" fill="#8A6BA6"/><rect x="392" y="196" width="60" height="100" rx="4" fill="#3D6E8E"/><rect x="80" y="180" width="352" height="24" rx="4" fill="#C46A3A"/><rect x="80" y="308" width="352" height="24" rx="4" fill="#C46A3A"/><text x="256" y="160" text-anchor="middle" font-family="monospace" font-size="80" font-weight="700" fill="#E9E5DB">B</text></svg>`;
+const iconBlob=new Blob([ICON_SVG],{type:'image/svg+xml'});
+const iconUrl=URL.createObjectURL(iconBlob);
+document.getElementById('pwaIcon').href=iconUrl;
+const manifest={name:'Bowl Capacity Estimator',short_name:'Bowl',start_url:location.href.split('#')[0],
+  display:'standalone',background_color:'#E9E5DB',theme_color:'#17160F',
+  icons:[{src:iconUrl,sizes:'512x512',type:'image/svg+xml'}]};
+const mBlob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
+document.getElementById('pwaManifest').href=URL.createObjectURL(mBlob);
+if('serviceWorker' in navigator){
+  const swCode=`self.addEventListener('fetch',e=>e.respondWith(fetch(e.request).catch(()=>caches.match(e.request))));
+    self.addEventListener('install',e=>e.waitUntil(caches.open('bowl-v1').then(c=>c.add(location.href))));`;
+  const swBlob=new Blob([swCode],{type:'application/javascript'});
+  navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(()=>{});
+}
+</script>
+<style>
+  :root{
+    --paper:#E9E5DB; --paper2:#E2DDD0; --paper3:#EFEBE0; --ink:#17160F; --ink2:#56534A;
+    --line:#C3BCAC; --line2:#D6D0C1; --accent:#C24228; --accent-d:#9E3520;
+    --ok:#3F7A52; --warn:#C0782A; --bad:#B23A28;
+    --zN:#3D6E8E; --zE:#4E8C6A; --zS:#C46A3A; --zW:#8A6BA6; --zCorner:#B89154;
+    --pitch:#6E8F4E;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+    padding:max(14px,env(safe-area-inset-top)) 14px calc(40px + env(safe-area-inset-bottom));
+    max-width:920px;margin:0 auto;
+    background-image:linear-gradient(var(--line2) 1px,transparent 1px),linear-gradient(90deg,var(--line2) 1px,transparent 1px);
+    background-size:22px 22px;background-position:-1px -1px}
+  h1{font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;margin:0 0 2px}
+  .sub{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink2);text-transform:uppercase;margin-bottom:12px}
+  .topbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .card{background:var(--paper2);border:1px solid var(--line);border-radius:3px;margin-bottom:12px}
+  .iconbtn{background:transparent;border:1px solid var(--line);border-radius:3px;font-family:var(--mono);font-size:10px;
+    letter-spacing:.08em;text-transform:uppercase;padding:9px 12px;color:var(--ink);cursor:pointer}
+  .iconbtn:hover{border-color:var(--ink)}
+  .hero{padding:18px 18px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .cap-label{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink2)}
+  .cap{font-family:var(--mono);font-weight:600;font-size:clamp(42px,14vw,70px);line-height:.9;color:var(--accent);
+    letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .delta{font-family:var(--mono);font-size:12px;color:var(--ink2);margin-top:4px}
+  .netline{font-family:var(--mono);font-size:13px;color:var(--ink);margin-top:6px} .netline b{color:var(--accent-d)}
+  .ded{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid var(--line2);font-family:var(--mono);font-size:11.5px}
+  .ded:first-child{border-top:0}
+  .ded .cb{width:16px;height:16px;border:1px solid var(--ink2);border-radius:3px;flex:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--paper)}
+  .ded .cb.on{background:var(--ink);border-color:var(--ink)}
+  .ded .lbl{flex:1}
+  .ded input{width:70px;font-family:var(--mono);font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:2px;background:var(--paper);color:var(--ink);text-align:right}
+  .ded .loss{color:var(--accent-d);min-width:64px;text-align:right}
+  .dedhead{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:11px 14px 4px;display:flex;justify-content:space-between}
+  .dedhead b{color:var(--accent-d)}
+  .hero .meta{font-family:var(--mono);font-size:11px;color:var(--ink2);text-align:right;line-height:1.7}
+  .hero .meta b{color:var(--ink);font-weight:600}
+  .viztabs{display:flex;gap:8px;padding:10px 12px 0;flex-wrap:wrap;align-items:center}
+  .viztabs button{background:transparent;border:1px solid var(--line);border-radius:2px;font-family:var(--mono);
+    font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:5px 9px;color:var(--ink2);cursor:pointer}
+  .viztabs button.on{border-color:var(--ink);color:var(--ink)}
+  .hint{font-family:var(--mono);font-size:9px;color:var(--ink2);margin-left:auto}
+  .vlabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);padding:8px 12px 4px}
+  .viz{padding:2px 6px}
+  svg{display:block;width:100%;height:auto;touch-action:none}
+  .zonebar{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;padding:8px 12px 4px}
+  .ztog{font-family:var(--mono);font-size:9.5px;letter-spacing:.02em;text-transform:uppercase;border:1px solid var(--line);
+    border-radius:2px;padding:6px 2px;text-align:center;cursor:pointer;color:var(--ink2);background:var(--paper)}
+  .ztog.on{color:#fff;border-color:transparent}
+  .legend{display:flex;flex-wrap:wrap;gap:4px 12px;padding:6px 14px 12px;font-family:var(--mono);font-size:9.5px;color:var(--ink2)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:9px;height:9px;border-radius:1px;display:inline-block}
+  .chips{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border-top:1px solid var(--line)}
+  .chip{background:var(--paper2);padding:9px 12px;cursor:pointer;transition:background .12s}
+  .chip:hover,.chip.hot{background:var(--paper3)}
+  .chip .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2);display:flex;align-items:center;gap:6px}
+  .chip .sw{width:9px;height:9px;border-radius:1px;flex:none}
+  .chip .v{font-family:var(--mono);font-weight:600;font-size:18px;font-variant-numeric:tabular-nums}
+  .chip .sub2{font-family:var(--mono);font-size:9px;color:var(--ink2)}
+  details{border-top:1px solid var(--line)}
+  details:first-of-type{border-top:0}
+  summary{list-style:none;cursor:pointer;padding:11px 14px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+  summary::-webkit-details-marker{display:none}
+  summary .ic{color:var(--ink2);transition:transform .15s}
+  details[open] summary .ic{transform:rotate(45deg)}
+  .body{padding:2px 14px 14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+  .field label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin-bottom:2px}
+  .field input,.field select{width:100%;font-family:var(--mono);font-size:15px;padding:7px 8px;border:1px solid var(--line);
+    border-radius:2px;background:var(--paper);color:var(--ink);-moz-appearance:textfield}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+  .field input::-webkit-outer-spin-button,.field input::-webkit-inner-spin-button{-webkit-appearance:none}
+  .unit{font-size:8.5px;color:var(--line);text-transform:none;letter-spacing:0}
+  .facetgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+  .tier{border:1px solid var(--line);border-radius:2px;padding:9px;margin-bottom:9px}
+  .tier .th{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+  .tier .dot{width:11px;height:11px;border-radius:2px;flex:none}
+  .tier .tn{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+  .tier .tcap{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink2)}
+  .tier .rm{background:transparent;border:0;color:var(--ink2);font-family:var(--mono);font-size:17px;cursor:pointer;padding:0 2px 0 8px;line-height:1}
+  .setting{border:1px dashed var(--line2);border-radius:2px;padding:7px;margin-bottom:7px}
+  .setting .sh{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin-bottom:5px;display:flex;align-items:center}
+  .setting .srm{margin-left:auto;background:transparent;border:0;color:var(--ink2);font-size:14px;cursor:pointer;line-height:1}
+  .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .addbtn{width:100%;background:transparent;border:1px dashed var(--line2);border-radius:2px;font-family:var(--mono);
+    font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:9px;color:var(--ink2);cursor:pointer;margin-top:2px}
+  .addbtn:hover{border-color:var(--ink2);color:var(--ink)}
+  .addsetting{padding:6px;font-size:9.5px}
+  .flags{display:flex;flex-direction:column}
+  .flag{display:flex;align-items:center;gap:9px;padding:8px 14px;border-top:1px solid var(--line2);font-family:var(--mono);font-size:11.5px}
+  .flag:first-child{border-top:0}
+  .flag .st{width:8px;height:8px;border-radius:50%;flex:none}
+  .flag .st.ok{background:var(--ok)} .flag .st.warn{background:var(--warn)} .flag .st.bad{background:var(--bad)} .flag .st.info{background:var(--ink2)}
+  .flag .lbl{flex:1;color:var(--ink)} .flag .val{color:var(--ink2)}
+  .note{font-family:var(--mono);font-size:10px;color:var(--ink2);line-height:1.5;padding:0 14px 14px}
+  .warnote{color:var(--accent-d)}
+  .foot{font-family:var(--mono);font-size:9.5px;color:var(--ink2);text-align:center;padding:6px 10px 0;letter-spacing:.05em}
+  #print{display:none}
+  @media print{body>:not(#print){display:none!important}#print{display:block;padding:0;color:#000;font-family:var(--sans)}}
+  @media(max-width:480px){.hero .meta{text-align:left}.g4{grid-template-columns:repeat(2,1fr)}.zonebar{grid-template-columns:repeat(4,1fr)}.facetgrid{grid-template-columns:repeat(2,1fr)}}
+</style>
+
+<h1>Bowl</h1>
+<div class="sub">Stadium capacity estimator · sightline-derived</div>
+
+<div class="topbar">
+  <button class="iconbtn" id="pinBtn">Pin A</button>
+  <button class="iconbtn" id="linkBtn">Copy link</button>
+  <button class="iconbtn" id="printBtn">Export sheet</button>
+</div>
+
+<div class="card">
+  <div class="hero">
+    <div>
+      <div class="cap-label">Estimated capacity</div>
+      <div class="cap" id="cap">—</div>
+      <div class="netline" id="netline"></div>
+      <div class="delta" id="delta"></div>
+    </div>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div class="viztabs" id="viztabs">
+    <button data-v="plan" class="on">Plan</button>
+    <button data-v="section">Section</button>
+    <button data-v="axo">3D</button>
+    <span class="hint" id="hint"></span>
+  </div>
+  <div class="vlabel" id="vlabel"></div>
+  <div class="viz"><div id="viz"></div></div>
+  <div class="zonebar" id="zonebar"></div>
+  <div class="legend" id="legend"></div>
+  <div class="chips" id="chips"></div>
+</div>
+
+<div class="card">
+  <div class="flags" id="flags"></div>
+  <div class="note" id="note"></div>
+</div>
+
+<div class="card">
+  <div class="dedhead"><span>Net capacity deductions</span><span id="netSummary"></span></div>
+  <div id="deductions"></div>
+  <div class="note">Rough, editable estimates. Vomitories count tunnel penetrations only (bay gangways are already deducted). Wheelchair loss links to the calculated provision and applies only where platforms displace ambulant seats.</div>
+</div>
+
+<div class="card" id="inputs">
+  <details open>
+    <summary>Pitch, offsets &amp; corners <span class="ic">+</span></summary>
+    <div class="body">
+      <div class="field" style="margin-bottom:8px"><label>Preset</label>
+        <select id="preset">
+          <option value="football">Football — 105 × 68 m</option>
+          <option value="rugby">Rugby — 144 × 70 m</option>
+          <option value="athletics">Athletics track — 105 × 68 + track</option>
+          <option value="custom">Custom</option>
+        </select></div>
+      <div class="grid">
+        <div class="field"><label>Pitch width <span class="unit">mm</span></label><input type="number" id="pitchW" value="105000"></div>
+        <div class="field"><label>Pitch length <span class="unit">mm</span></label><input type="number" id="pitchL" value="68000"></div>
+        <div class="field"><label>North offset <span class="unit">mm</span></label><input type="number" id="offN" value="8000"></div>
+        <div class="field"><label>South offset <span class="unit">mm</span></label><input type="number" id="offS" value="8000"></div>
+        <div class="field"><label>East offset <span class="unit">mm</span></label><input type="number" id="offE" value="8000"></div>
+        <div class="field"><label>West offset <span class="unit">mm</span></label><input type="number" id="offW" value="8000"></div>
+        <div class="field"><label>Height first row <span class="unit">mm</span></label><input type="number" id="hFirst" value="-180"></div>
+        <div class="field"><label>Available depth <span class="unit">mm 0=off</span></label><input type="number" id="availDepth" value="0"></div>
+      </div>
+      <label style="font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);display:block;margin-top:8px">Corner facets (per corner)</label>
+      <div class="facetgrid">
+        <div class="field"><label>NW</label><input type="number" id="fNW" value="3"></div>
+        <div class="field"><label>NE</label><input type="number" id="fNE" value="3"></div>
+        <div class="field"><label>SE</label><input type="number" id="fSE" value="3"></div>
+        <div class="field"><label>SW</label><input type="number" id="fSW" value="3"></div>
+      </div>
+    </div>
+  </details>
+
+  <details open>
+    <summary>Tiers &amp; settings <span class="ic">+</span></summary>
+    <div class="body">
+      <div id="tiers"></div>
+      <button class="addbtn" id="addtier">+ Add tier (stacked deck)</button>
+    </div>
+  </details>
+
+  <details>
+    <summary>Structure &amp; sightline <span class="ic">+</span></summary>
+    <div class="body">
+      <div class="grid">
+        <div class="field"><label>Structural spacing <span class="unit">mm</span></label><input type="number" id="struct" value="7700"></div>
+        <div class="field"><label>Eye height <span class="unit">mm</span></label><input type="number" id="eyeH" value="1200"></div>
+        <div class="field"><label>Eye offset <span class="unit">mm</span></label><input type="number" id="eyeOff" value="150"></div>
+        <div class="field"></div>
+      </div>
+      <div class="note" style="padding:8px 0 0">Focal point: near-side touchline. Gangway width is set per tier.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Compliance thresholds <span class="ic">+</span></summary>
+    <div class="body">
+      <div class="grid">
+        <div class="field"><label>Min seat width <span class="unit">mm</span></label><input type="number" id="minSeat" value="460"></div>
+        <div class="field"><label>Max seats / gangway run</label><input type="number" id="maxRun" value="28"></div>
+        <div class="field"><label>Max riser <span class="unit">mm</span></label><input type="number" id="maxRiser" value="540"></div>
+        <div class="field"><label>Max rake angle <span class="unit">deg</span></label><input type="number" id="maxAngle" value="35"></div>
+        <div class="field"><label>Max viewing dist <span class="unit">m</span></label><input type="number" id="maxView" value="190"></div>
+        <div class="field"></div>
+      </div>
+      <div class="note" style="padding:8px 0 0">Indicative defaults — edit to match your GG6 tracker. Wheelchair provision follows the Accessible Stadia sliding scale.</div>
+    </div>
+  </details>
+</div>
+
+<div class="foot">Concept estimator — verify against the Green Guide (6th ed.) before issue.</div>
+<div id="print"></div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const TC_HEX=['#1B3A4B','#4E8FA0','#BFD9D0','#C98A2B','#9C4A2E']; // distinct, ordered
+const ZHEX={N:'#3D6E8E',E:'#4E8C6A',S:'#C46A3A',W:'#8A6BA6',NW:'#B89154',NE:'#A9803F',SE:'#C29A5E',SW:'#9C7240'};
+const ZONES=['N','E','S','W','NW','NE','SE','SW'];
+const PRESETS={football:[105000,68000,8000],rugby:[144000,70000,8000],athletics:[105000,68000,33000]};
+const F=Math.floor;
+
+let state={
+  viz:'plan', hot:null, pinned:null, az:0.7, el:0.62,
+  tiers:[{gw:1200,vOffset:-180,setback:0,settings:[
+    {rows:9,cval:90,tread:840,sp:500},{rows:8,cval:100,tread:800,sp:500},{rows:6,cval:120,tread:1000,sp:650}]}],
+  zones:{N:1,E:1,S:1,W:1,NW:1,NE:1,SE:1,SW:1},
+  vom:null,
+  ded:{wc:{on:1,val:12},media:{on:1,val:120},vom:{on:1},player:{on:1,val:80},vehicle:{on:1,val:120}}
+};
+
+const num=id=>{const v=parseFloat($(id).value);return isNaN(v)?0:v;};
+const fmt=n=>Math.round(n).toLocaleString('en-GB');
+function P(){return{pitchW:num('pitchW'),pitchL:num('pitchL'),offN:num('offN'),offS:num('offS'),offE:num('offE'),offW:num('offW'),
+  hFirst:num('hFirst'),struct:Math.max(1,num('struct')),eyeH:num('eyeH'),eyeOff:num('eyeOff'),
+  fNW:Math.max(1,Math.round(num('fNW'))),fNE:Math.max(1,Math.round(num('fNE'))),fSE:Math.max(1,Math.round(num('fSE'))),fSW:Math.max(1,Math.round(num('fSW'))),
+  minSeat:num('minSeat'),maxRun:num('maxRun'),maxRiser:num('maxRiser'),maxAngle:num('maxAngle'),maxView:num('maxView'),availDepth:num('availDepth')};}
+
+// ── seat-packing (trapezoidal maths, validated to 17,316) ──────────────
+function longHalf(Lr,Lref,g,gref,struct,gw){return F(F(Lref/struct)/2*F((2*struct-gw)/g))+F((Lr-(F((Lref-gw)/struct))*struct-struct)/gref);}
+function shortHalf(Jr,Jref,g,struct,gw){return F(F(Jref/struct)/2*F((2*struct-gw)/g))+F((Jr-(F((Jref-gw)/struct))*struct-gw)/g);}
+function cornerSeats(rad,B,g,tan,facets,eyeH){return 2*F((tan*(rad+B)-eyeH/2)/g)+((facets-1)*F((2*tan*(rad+B)-eyeH)/g));}
+const thetaTan=f=>Math.tan(Math.PI*(90/(2+f*2))/180);
+
+function computeRows(p){
+  const tNW=thetaTan(p.fNW),tNE=thetaTan(p.fNE),tSE=thetaTan(p.fSE),tSW=thetaTan(p.fSW);
+  const focal=Math.min(p.offN,p.offS,p.offE,p.offW);
+  const rNW=Math.min(p.offW,p.offN),rSE=Math.min(p.offE,p.offS),rNE=Math.min(p.offE,p.offN),rSW=Math.min(p.offS,p.offW);
+  const aeN=p.offN-Math.min(rNW,rNE),aeS=p.offS-Math.min(rSE,rSW),aeE=p.offE-Math.min(rNE,rSE),aeW=p.offW-Math.min(rSW,rNW);
+  const hl=(d,rad,ae,B,tan)=>ae+d/2+tan*(rad+B);
+  const rows=[]; let prevBackDepth=0, prevBackTreadTop=p.hFirst, maxRiser=0, maxAngle=0, cap=400;
+  state.tiers.forEach((tier,ti)=>{
+    const frontDepth=ti===0?0:prevBackDepth+(tier.setback||0);
+    const baseTreadTop=ti===0?p.hFirst:prevBackTreadTop+(tier.vOffset||0);
+    const gw=tier.gw||1200, g2=(tier.settings[0]||{}).sp||500;
+    // 8 stand-halves: each belongs to a stand and meets a corner. [stand, kind, dim, ae, corner, radius, tan, facets]
+    const halves=[
+      ['N','long',p.pitchW,aeN,'NW',rNW,tNW],['N','long',p.pitchW,aeN,'NE',rNE,tNE],
+      ['S','long',p.pitchW,aeS,'SW',rSW,tSW],['S','long',p.pitchW,aeS,'SE',rSE,tSE],
+      ['E','short',p.pitchL,aeE,'NE',rNE,tNE],['E','short',p.pitchL,aeE,'SE',rSE,tSE],
+      ['W','short',p.pitchL,aeW,'NW',rNW,tNW],['W','short',p.pitchL,aeW,'SW',rSW,tSW]];
+    const cnr=[['NW',rNW,tNW,p.fNW],['NE',rNE,tNE,p.fNE],['SE',rSE,tSE,p.fSE],['SW',rSW,tSW,p.fSW]];
+    const half=(kind,Lr,Lref,sp)=>kind==='long'?longHalf(Lr,Lref,sp,g2,p.struct,gw):shortHalf(Lr,Lref,sp,p.struct,gw);
+    let cumTread=0, prevH=baseTreadTop+p.eyeH, prevX=null, first=true;
+    tier.settings.forEach(set=>{
+      const rN=Math.max(0,Math.round(set.rows));
+      for(let r=0;r<rN && rows.length<cap;r++){
+        cumTread+=set.tread; const B=frontDepth+cumTread, x=focal+B-p.eyeOff;
+        let h,treadTop,riser,ang;
+        if(first){treadTop=baseTreadTop;h=treadTop+p.eyeH;riser=0;ang=0;first=false;}
+        else{h=x*(prevH+set.cval)/(prevX||x);treadTop=h-p.eyeH;riser=treadTop-rows[rows.length-1].treadTop;ang=Math.atan2(riser,set.tread)*180/Math.PI;}
+        prevH=h;prevX=x;maxRiser=Math.max(maxRiser,riser);maxAngle=Math.max(maxAngle,ang);
+        let z={N:0,E:0,S:0,W:0,NW:0,NE:0,SE:0,SW:0};
+        // stand halves: rectilinear part -> stand; growth (triangular) -> adjacent corner (only if corner present)
+        halves.forEach(([sk,kind,dim,ae,ck,rad,tc])=>{
+          if(!state.zones[sk])return;
+          const Lf=hl(dim,rad,ae,frontDepth,tc), rect=half(kind,Lf,Lf,set.sp);
+          if(state.zones[ck]){
+            const full=half(kind,hl(dim,rad,ae,B,tc),Lf,set.sp);
+            z[sk]+=rect; z[ck]+=Math.max(0,full-rect);
+          } else { z[sk]+=rect; } // absent corner -> square-cut, rectilinear
+        });
+        // chamfer (facet) seats for present corners
+        cnr.forEach(([ck,rad,tc,fc])=>{ if(state.zones[ck])z[ck]+=cornerSeats(rad,B,set.sp,tc,fc,p.eyeH); });
+        let rc=0;for(const k in z)rc+=z[k];
+        rows.push({ti,B,cval:set.cval,tread:set.tread,sp:set.sp,treadTop,riser,ang,rowCap:rc,z,seatsPerRun:F((2*p.struct-gw)/set.sp)});
+      }
+    });
+    const last=rows[rows.length-1];
+    prevBackDepth=last?last.B:frontDepth; prevBackTreadTop=last?last.treadTop:baseTreadTop;
+    tier._front=frontDepth; tier._back=prevBackDepth; tier._baseTop=baseTreadTop; tier._backTop=prevBackTreadTop;
+  });
+  const zones={N:0,E:0,S:0,W:0,NW:0,NE:0,SE:0,SW:0}, tierCap=state.tiers.map(()=>0); let total=0;
+  rows.forEach(r=>{for(const k in r.z)zones[k]+=r.z[k];tierCap[r.ti]+=r.rowCap;total+=r.rowCap;});
+  const depth=rows.length?rows[rows.length-1].B:0;
+  return{rows,zones,tierCap,total,focal,maxRiser,maxAngle,depth,
+    backTop:rows.length?rows[rows.length-1].treadTop:0,
+    blockN:p.pitchW+p.offE+p.offW,blockE:p.pitchL+p.offN+p.offS,
+    footW:p.pitchW+p.offE+p.offW+2*depth, footL:p.pitchL+p.offN+p.offS+2*depth};
+}
+function wheelchair(c){
+  if(c<10000)return Math.max(6,Math.ceil(c/100));
+  if(c<20000)return Math.ceil(100+5*(c-10000)/1000);
+  if(c<40000)return Math.ceil(150+3*(c-20000)/1000);
+  return Math.ceil(210+2*(c-40000)/1000);
+}
+// vom defaults: 8/long stand, 5/short stand, facets/corner
+function vomDefault(p){
+  const d={};
+  const longV=8,shortV=5;
+  ['N','S'].forEach(z=>d[z]={cnt:longV,sp:30});
+  ['E','W'].forEach(z=>d[z]={cnt:shortV,sp:30});
+  ['NW','NE','SE','SW'].forEach((z,i)=>{const f=[p.fNW,p.fNE,p.fSE,p.fSW][i];d[z]={cnt:f,sp:30};});
+  return d;
+}
+function vomLoss(p){
+  if(!state.vom)state.vom=null; // initialised lazily
+  let total=0;
+  const ZONES8=['N','S','E','W','NW','NE','SE','SW'];
+  ZONES8.forEach(z=>{
+    if(!state.zones[z])return;
+    const entry=state.vom&&state.vom[z]?state.vom[z]:{cnt:(['N','S'].includes(z)?8:['E','W'].includes(z)?5:p['f'+z]||3),sp:30};
+    total+=Math.round(entry.cnt)*Math.round(entry.sp);
+  });
+  return total;
+}
+const DED=[['wc','Wheelchair provision'],['media','Media / camera positions'],['vom','Vomitory penetrations'],['player','Player tunnel'],['vehicle','Pitch / vehicular tunnels']];
+function dedLoss(k,gross,p){const d=state.ded[k];if(!d.on)return 0;
+  if(k==='wc')return wheelchair(gross)*d.val;
+  if(k==='vom')return vomLoss(p);
+  return d.val;}
+function computeNet(gross,p){let total=0;DED.forEach(([k])=>total+=dedLoss(k,gross,p));return{total,net:gross-total};}
+function renderDeductions(gross,p){
+  const host=$('deductions');host.innerHTML='';
+  DED.forEach(([k,lbl])=>{
+    const d=state.ded[k],loss=dedLoss(k,gross,p);
+    const isVom=k==='vom',isWC=k==='wc';
+    let valField=`<input type="number" data-dv="${k}" value="${d.val}"><span style="color:var(--ink2);font-size:9px">${isWC?'/space':''}</span>`;
+    if(isVom){
+      // expanded vom sub-table
+      valField=`<span style="color:var(--ink2);font-size:10px">see below</span>`;
+    }
+    const row=document.createElement('div');row.className='ded';
+    row.innerHTML=`<div class="cb ${d.on?'on':''}" data-cb="${k}">${d.on?'✓':''}</div>
+      <span class="lbl">${lbl}</span>${isVom?'':valField}
+      <span class="loss">−${fmt(loss)}</span>`;
+    host.appendChild(row);
+    if(isVom&&d.on){
+      const ZONES8=['N','S','E','W','NW','NE','SE','SW'];
+      if(!state.vom)state.vom={};
+      ZONES8.forEach(z=>{
+        if(!state.zones[z])return;
+        if(!state.vom[z])state.vom[z]={cnt:(['N','S'].includes(z)?8:['E','W'].includes(z)?5:p['f'+z]||3),sp:30};
+        const entry=state.vom[z];
+        const vrow=document.createElement('div');vrow.className='ded';vrow.style.paddingLeft='32px';
+        vrow.innerHTML=`<span class="lbl" style="color:var(--ink2);font-size:10px">${z} stand</span>
+          <span style="font-size:9px;color:var(--ink2)">voms:</span>
+          <input type="number" data-vm="${z}" data-vk="cnt" value="${entry.cnt}" style="width:46px">
+          <span style="font-size:9px;color:var(--ink2)">×seats:</span>
+          <input type="number" data-vm="${z}" data-vk="sp" value="${entry.sp}" style="width:46px">
+          <span class="loss" style="font-size:10px">−${fmt(Math.round(entry.cnt)*Math.round(entry.sp))}</span>`;
+        host.appendChild(vrow);
+      });
+    }
+  });
+  host.querySelectorAll('[data-cb]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.cb;state.ded[k].on=state.ded[k].on?0:1;render();}));
+  host.querySelectorAll('[data-dv]').forEach(i=>i.addEventListener('input',e=>{state.ded[e.target.dataset.dv].val=parseFloat(e.target.value)||0;render();}));
+  host.querySelectorAll('[data-vm]').forEach(i=>i.addEventListener('input',e=>{
+    const z=e.target.dataset.vm,k=e.target.dataset.vk;
+    if(!state.vom)state.vom={};
+    if(!state.vom[z])state.vom[z]={cnt:8,sp:30};
+    state.vom[z][k]=parseFloat(e.target.value)||0;render();}));
+  $('netSummary').innerHTML=`net <b>${fmt(computeNet(gross,p).net)}</b>`;
+}
+
+// ── PLAN: W=bottom, N=left, E=top, S=right ────────────────────────────
+// Mapping: screenX = offX + (-worldY)*s  (N→left, S→right)
+//          screenY = offY + (-worldX)*s  (E→top,  W→bottom)
+function drawPlan(res,p){
+  $('vlabel').textContent='Plan — W stand bottom · N left · E top · S right · tap zone';
+  $('hint').textContent='';
+  const W=720,H=520,pad=30;
+  const pw=p.pitchW/2,pl=p.pitchL/2,D=res.depth;
+  const ixE=pw+p.offE,ixW=pw+p.offW,iyN=pl+p.offN,iyS=pl+p.offS;
+  // Screen bounding box: screenX∈[-(iyN+D)..(iyS+D)], screenY∈[-(ixE+D)..(ixW+D)]
+  const sxMin=-(iyN+D),sxMax=iyS+D,syMin=-(ixE+D),syMax=ixW+D;
+  const s=Math.min((W-2*pad)/(sxMax-sxMin),(H-2*pad)/(syMax-syMin));
+  const offX=W/2-((sxMin+sxMax)/2)*s, offY=H/2-((syMin+syMax)/2)*s;
+  const SX=(wx,wy)=>offX+(-wy)*s;
+  const SY=(wx,wy)=>offY+(-wx)*s;
+  const PT=(wx,wy)=>`${SX(wx,wy)},${SY(wx,wy)}`;
+  const gl='#EDEAE0';
+  const tCount=state.tiers.length;
+  const lighten=(hex,t)=>{const n=parseInt(hex.slice(1),16);let r=(n>>16),g=((n>>8)&255),b=(n&255);
+    r=Math.round(r+(255-r)*t);g=Math.round(g+(255-g)*t);b=Math.round(b+(255-b)*t);
+    return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);};
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  // Draw outermost tier first so inner tiers render on top
+  for(let ti=tCount-1;ti>=0;ti--){
+    const t=state.tiers[ti];if(t._back==null)continue;
+    const dF=t._front,dB=t._back;
+    const lf=ti/(Math.max(tCount-1,1))*0.52;
+    const rNW=Math.min(p.offW,p.offN),rNE=Math.min(p.offE,p.offN),rSE=Math.min(p.offE,p.offS),rSW=Math.min(p.offW,p.offS);
+    // Rectilinear stand bands (clipped away from corner zones)
+    const stands=[
+      {z:'N',pts:[[-ixW+rNW,iyN+dF],[ixE-rNE,iyN+dF],[ixE-rNE,iyN+dB],[-ixW+rNW,iyN+dB]]},
+      {z:'S',pts:[[-ixW+rSW,-(iyS+dF)],[ixE-rSE,-(iyS+dF)],[ixE-rSE,-(iyS+dB)],[-ixW+rSW,-(iyS+dB)]]},
+      {z:'E',pts:[[ixE+dF,-(iyS-rSE)],[ixE+dB,-(iyS-rSE)],[ixE+dB,iyN-rNE],[ixE+dF,iyN-rNE]]},
+      {z:'W',pts:[[-(ixW+dB),-(iyS-rSW)],[-(ixW+dF),-(iyS-rSW)],[-(ixW+dF),iyN-rNW],[-(ixW+dB),iyN-rNW]]}
+    ];
+    stands.forEach(({z,pts})=>{
+      if(!state.zones[z])return;
+      const col=lighten(ZHEX[z],lf),dim=(state.hot&&state.hot!==z)?0.25:1;
+      svg+=`<polygon points="${pts.map(([wx,wy])=>PT(wx,wy)).join(' ')}" fill="${col}" stroke="var(--paper2)" stroke-width="0.7" opacity="${dim}" data-z="${z}" style="cursor:pointer"/>`;
+    });
+    // Corner arcs: annular sector from radius dF to dB
+    // Each corner defined by: arc centre (world), start/end angles, per-corner facet count
+    const cnrDefs=[
+      {z:'NW',cx:-ixW+rNW,cy:iyN-rNW,r:rNW,a0:Math.PI/2,a1:Math.PI,f:p.fNW},
+      {z:'NE',cx: ixE-rNE,cy:iyN-rNE,r:rNE,a0:0,        a1:Math.PI/2,f:p.fNE},
+      {z:'SE',cx: ixE-rSE,cy:-(iyS-rSE),r:rSE,a0:-Math.PI/2,a1:0, f:p.fSE},
+      {z:'SW',cx:-ixW+rSW,cy:-(iyS-rSW),r:rSW,a0:-Math.PI,a1:-Math.PI/2,f:p.fSW}
+    ];
+    cnrDefs.forEach(({z,cx,cy,r,a0,a1,f})=>{
+      if(!state.zones[z])return;
+      const col=lighten(ZHEX[z],lf),dim=(state.hot&&state.hot!==z)?0.25:1;
+      // Annular sector: outer arc (radius r+dB) forward, inner arc (radius r+dF) reversed
+      const outerArc=[],innerArc=[];
+      for(let i=0;i<=f;i++){const a=a0+(a1-a0)*i/f;
+        outerArc.push([cx+(r+dB)*Math.cos(a),cy+(r+dB)*Math.sin(a)]);
+        innerArc.push([cx+(r+dF)*Math.cos(a),cy+(r+dF)*Math.sin(a)]);}
+      const allPts=[...outerArc,...innerArc.reverse()];
+      svg+=`<polygon points="${allPts.map(([wx,wy])=>PT(wx,wy)).join(' ')}" fill="${col}" stroke="var(--paper2)" stroke-width="0.7" opacity="${dim}" data-z="${z}" style="cursor:pointer"/>`;
+    });
+  }
+  // Pitch + markings
+  svg+=`<rect x="${SX(-pw,pl)}" y="${SY(pw,pl)}" width="${pl*2*s}" height="${pw*2*s}" fill="var(--pitch)" opacity="0.92"/>`;
+  svg+=`<line x1="${SX(0,-pl)}" y1="${SY(0,-pl)}" x2="${SX(0,pl)}" y2="${SY(0,pl)}" stroke="${gl}" stroke-width="1" opacity="0.8"/>`;
+  svg+=`<circle cx="${SX(0,0)}" cy="${SY(0,0)}" r="${9150*s}" fill="none" stroke="${gl}" stroke-width="1" opacity="0.8"/>`;
+  svg+=`<circle cx="${SX(0,0)}" cy="${SY(0,0)}" r="1.6" fill="${gl}"/>`;
+  // Goals at E (+pw) and W (-pw); penalty/6yd boxes extend infield
+  const box=sign=>{const gx=sign*pw,pen=16500,peny=20150,six=5500,sixy=9160,ps=11000;
+    return `<rect x="${SX(Math.min(gx,gx-sign*pen),peny)}" y="${SY(Math.max(gx,gx-sign*pen),peny)}" width="${peny*2*s}" height="${pen*s}" fill="none" stroke="${gl}" stroke-width="1" opacity="0.8"/>`
+      +`<rect x="${SX(Math.min(gx,gx-sign*six),sixy)}" y="${SY(Math.max(gx,gx-sign*six),sixy)}" width="${sixy*2*s}" height="${six*s}" fill="none" stroke="${gl}" stroke-width="1" opacity="0.8"/>`
+      +`<circle cx="${SX(gx-sign*ps,0)}" cy="${SY(gx-sign*ps,0)}" r="1.6" fill="${gl}"/>`;};
+  svg+=box(1)+box(-1);
+  // Cardinal labels (W=bottom, N=left, E=top, S=right)
+  svg+=`<text x="10" y="${H/2+4}" font-family="var(--mono)" font-size="12" fill="var(--ink2)">N</text>`;
+  svg+=`<text x="${W-22}" y="${H/2+4}" font-family="var(--mono)" font-size="12" fill="var(--ink2)">S</text>`;
+  svg+=`<text x="${W/2-5}" y="16" font-family="var(--mono)" font-size="12" fill="var(--ink2)">E</text>`;
+  svg+=`<text x="${W/2-5}" y="${H-4}" font-family="var(--mono)" font-size="12" fill="var(--ink2)">W</text>`;
+  svg+=`</svg>`;
+  $('viz').innerHTML=svg;
+  $('viz').querySelectorAll('[data-z]').forEach(el=>el.addEventListener('click',()=>{state.hot=state.hot===el.dataset.z?null:el.dataset.z;render();}));
+}
+
+
+// ── SECTION: orthogonal step profile + corner-flag focal ───────────────
+function drawSection(res,p){
+  $('vlabel').textContent='Section — stepped rake to near touchline (worst case)';
+  $('hint').textContent='';
+  const W=720,H=380,padL=54,padR=18,padB=42,padT=18;
+  const rows=res.rows; if(!rows.length){$('viz').innerHTML='';return;}
+  const segs=[]; let cur=null,last=-1;
+  rows.forEach(r=>{if(r.ti!==last){if(cur)segs.push(cur);cur={ti:r.ti,rows:[]};last=r.ti;}cur.rows.push(r);});
+  if(cur)segs.push(cur);
+  let maxX=0,maxY=-1e9,minY=1e9;
+  rows.forEach(r=>{maxX=Math.max(maxX,res.focal+r.B);maxY=Math.max(maxY,r.treadTop);minY=Math.min(minY,r.treadTop);});
+  minY=Math.min(minY,0);
+  const sx=(W-padL-padR)/Math.max(maxX,1),sy=(H-padT-padB)/Math.max(maxY-minY,1);
+  const X=v=>padL+v*sx,Y=v=>H-padB-(v-minY)*sy;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  svg+=`<line x1="${padL}" y1="${Y(0)}" x2="${W-padR}" y2="${Y(0)}" stroke="var(--line)" stroke-width="1"/>`;
+  // corner flag: ~1.5m post scaled, grey pennant pointing right (into bowl)
+  const fhPx=Math.max(1500*sy,18); // 1.5m post in pixels
+  const flagX=X(0), flagY0=Y(0), flagY1=flagY0-fhPx;
+  svg+=`<line x1="${flagX}" y1="${flagY0}" x2="${flagX}" y2="${flagY1}" stroke="#888" stroke-width="1.2"/>`;
+  svg+=`<polygon points="${flagX},${flagY1} ${flagX+14},${flagY1+4} ${flagX},${flagY1+9}" fill="#999"/>`;
+  svg+=`<text x="${flagX+4}" y="${flagY0+14}" font-family="var(--mono)" font-size="9" fill="var(--ink2)">touchline</text>`;
+  segs.forEach(seg=>{
+    const col=TC_HEX[seg.ti%TC_HEX.length],rs=seg.rows;
+    const pts=[[res.focal+rs[0].B-rs[0].tread,rs[0].treadTop]];
+    const steep=[];
+    rs.forEach((r,i)=>{
+      pts.push([res.focal+r.B,r.treadTop]);
+      if(i<rs.length-1){const nx=res.focal+r.B,ny=rs[i+1].treadTop;pts.push([nx,ny]);
+        if(rs[i+1].ang>p.maxAngle)steep.push([nx,r.treadTop,ny]);}
+    });
+    let poly=pts.map(q=>`${X(q[0])},${Y(q[1])}`).join(' ')+` ${X(pts[pts.length-1][0])},${Y(minY)} ${X(pts[0][0])},${Y(minY)}`;
+    svg+=`<polygon points="${poly}" fill="${col}" opacity="0.6"/>`;
+    svg+=`<polyline points="${pts.map(q=>`${X(q[0])},${Y(q[1])}`).join(' ')}" fill="none" stroke="var(--ink)" stroke-width="1.5"/>`;
+    steep.forEach(s=>svg+=`<line x1="${X(s[0])}" y1="${Y(s[1])}" x2="${X(s[0])}" y2="${Y(s[2])}" stroke="var(--bad)" stroke-width="2.4"/>`);
+    const mid=rs[Math.floor(rs.length/2)];
+    svg+=`<text x="${X(res.focal+mid.B)}" y="${Y(mid.treadTop)-6}" font-family="var(--mono)" font-size="10" fill="var(--ink)">T${seg.ti+1}</text>`;
+  });
+  svg+=`<text x="6" y="${Y(maxY)+4}" font-family="var(--mono)" font-size="9" fill="var(--ink2)">${fmt(maxY)}mm</text>`;
+  if(p.availDepth>0){const xd=res.focal+p.availDepth;
+    svg+=`<line x1="${X(xd)}" y1="${Y(minY)}" x2="${X(xd)}" y2="${Y(maxY)+4}" stroke="var(--bad)" stroke-width="1.4" stroke-dasharray="5 3"/>`;
+    svg+=`<text x="${X(xd)-4}" y="${Y(maxY)}" text-anchor="end" font-family="var(--mono)" font-size="9" fill="var(--bad)">max depth</text>`;}
+  svg+=`<text x="${W-padR}" y="${H-14}" text-anchor="end" font-family="var(--mono)" font-size="9" fill="var(--ink2)">${fmt(maxX)}mm from touchline</text>`;
+  svg+=`</svg>`;
+  $('viz').innerHTML=svg;
+}
+
+// ── 3D axonometric (rotatable, no rear walls) ──────────────────────────
+function drawAxo(res,p){
+  $('vlabel').textContent='3D massing — drag to rotate';
+  $('hint').textContent='drag to rotate';
+  const W=720,H=520;
+  const pw=p.pitchW/2,pl=p.pitchL/2;
+  const ixE=pw+p.offE,ixW=pw+p.offW,iyN=pl+p.offN,iyS=pl+p.offS;
+  const rNW=Math.min(p.offW,p.offN),rNE=Math.min(p.offE,p.offN),rSE=Math.min(p.offE,p.offS),rSW=Math.min(p.offW,p.offS);
+  const faces=[];
+  const tri=(ti,zone,a,b,c)=>faces.push({ti,zone,v:[a,b,c]});
+  const quad=(ti,zone,a,b,c,d)=>{tri(ti,zone,a,b,c);tri(ti,zone,a,c,d);};
+  state.tiers.forEach((t,ti)=>{
+    if(t._back==null)return;
+    const dF=t._front,dB=t._back,zF=t._baseTop,zB=t._backTop;
+    // Stands clipped to non-corner zone (match plan geometry)
+    if(state.zones.N)quad(ti,'N',[-ixW+rNW,iyN+dF,zF],[ixE-rNE,iyN+dF,zF],[ixE-rNE,iyN+dB,zB],[-ixW+rNW,iyN+dB,zB]);
+    if(state.zones.S)quad(ti,'S',[-ixW+rSW,-(iyS+dF),zF],[ixE-rSE,-(iyS+dF),zF],[ixE-rSE,-(iyS+dB),zB],[-ixW+rSW,-(iyS+dB),zB]);
+    if(state.zones.E)quad(ti,'E',[ixE+dF,-(iyS-rSE),zF],[ixE+dF,iyN-rNE,zF],[ixE+dB,iyN-rNE,zB],[ixE+dB,-(iyS-rSE),zB]);
+    if(state.zones.W)quad(ti,'W',[-(ixW+dB),-(iyS-rSW),zB],[-(ixW+dB),iyN-rNW,zB],[-(ixW+dF),iyN-rNW,zF],[-(ixW+dF),-(iyS-rSW),zF]);
+    // Corners: annular sector faces matching plan arcs exactly
+    const cnrDefs=[
+      {z:'NW',cx:-ixW+rNW,cy:iyN-rNW,r:rNW,a0:Math.PI/2,a1:Math.PI,f:p.fNW},
+      {z:'NE',cx:ixE-rNE, cy:iyN-rNE, r:rNE,a0:0,a1:Math.PI/2,f:p.fNE},
+      {z:'SE',cx:ixE-rSE, cy:-(iyS-rSE),r:rSE,a0:-Math.PI/2,a1:0,f:p.fSE},
+      {z:'SW',cx:-ixW+rSW,cy:-(iyS-rSW),r:rSW,a0:-Math.PI,a1:-Math.PI/2,f:p.fSW}
+    ];
+    cnrDefs.forEach(({z,cx,cy,r,a0,a1,f})=>{
+      if(!state.zones[z])return;
+      const RF=r+dF,RB=r+dB;
+      for(let i=0;i<f;i++){
+        const aa=a0+(a1-a0)*i/f,ab=a0+(a1-a0)*(i+1)/f;
+        const faA=[cx+RF*Math.cos(aa),cy+RF*Math.sin(aa),zF],faB=[cx+RF*Math.cos(ab),cy+RF*Math.sin(ab),zF];
+        const baA=[cx+RB*Math.cos(aa),cy+RB*Math.sin(aa),zB],baB=[cx+RB*Math.cos(ab),cy+RB*Math.sin(ab),zB];
+        quad(ti,z,faA,faB,baB,baA);
+      }
+    });
+  });
+  const az=state.az,el=state.el;
+  const proj=v=>{const rx=v[0]*Math.cos(az)-v[1]*Math.sin(az),ry=v[0]*Math.sin(az)+v[1]*Math.cos(az);
+    return{x:rx,y:ry*Math.sin(el)-v[2]*Math.cos(el)};};
+  let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
+  const acc=q=>{minX=Math.min(minX,q.x);maxX=Math.max(maxX,q.x);minY=Math.min(minY,q.y);maxY=Math.max(maxY,q.y);};
+  faces.forEach(f=>f.v.forEach(v=>acc(proj(v))));
+  [[pw,pl,0],[-pw,-pl,0],[pw,-pl,0],[-pw,pl,0]].forEach(v=>acc(proj(v)));
+  if(minX>maxX){$('viz').innerHTML='<svg viewBox="0 0 720 520"></svg>';return;}
+  const pad=34,s=Math.min((W-2*pad)/(maxX-minX||1),(H-2*pad)/(maxY-minY||1));
+  const ox=pad-minX*s+(W-2*pad-(maxX-minX)*s)/2,oy=pad-minY*s+(H-2*pad-(maxY-minY)*s)/2;
+  const SX=q=>ox+q.x*s,SY=q=>oy+q.y*s;
+  const cam=[Math.sin(az)*Math.cos(el),Math.cos(az)*Math.cos(el),Math.sin(el)];
+  faces.forEach(f=>{f.depth=f.v.reduce((a,v)=>a+v[0]*cam[0]+v[1]*cam[1]+v[2]*cam[2],0)/3;});
+  faces.sort((a,b)=>a.depth-b.depth);
+  const tCount=state.tiers.length;
+  const lighten=(hex,t)=>{const n=parseInt(hex.slice(1),16);let r=(n>>16),g=((n>>8)&255),b=(n&255);
+    r=Math.round(r+(255-r)*t);g=Math.round(g+(255-g)*t);b=Math.round(b+(255-b)*t);
+    return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);};
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  const pc=[[-pw,pl,0],[pw,pl,0],[pw,-pl,0],[-pw,-pl,0]].map(v=>{const q=proj(v);return `${SX(q)},${SY(q)}`;});
+  svg+=`<polygon points="${pc.join(' ')}" fill="var(--pitch)" opacity="0.9"/>`;
+  faces.forEach(f=>{
+    const pts=f.v.map(v=>{const q=proj(v);return `${SX(q)},${SY(q)}`;}).join(' ');
+    const lf=f.ti/(Math.max(tCount-1,1))*0.52;
+    const col=lighten(ZHEX[f.zone]||TC_HEX[f.ti%TC_HEX.length],lf);
+    const dim=state.hot&&state.hot!==f.zone?0.2:1;
+    svg+=`<polygon points="${pts}" fill="${col}" stroke="rgba(20,18,12,0.22)" stroke-width="0.5" opacity="${0.95*dim}"/>`;
+  });
+  svg+=`</svg>`;
+  $('viz').innerHTML=svg;
+  attachRotate();
+}
+function attachRotate(){
+  const sv=$('viz').querySelector('svg'); if(!sv)return;
+  let drag=false,lx=0,ly=0;
+  const down=e=>{drag=true;const t=e.touches?e.touches[0]:e;lx=t.clientX;ly=t.clientY;};
+  const move=e=>{if(!drag)return;e.preventDefault();const t=e.touches?e.touches[0]:e;
+    state.az+=(t.clientX-lx)*0.01;state.el=Math.max(0.12,Math.min(1.45,state.el-(t.clientY-ly)*0.008));
+    lx=t.clientX;ly=t.clientY;const p=P();drawAxo(computeRows(p),p);};
+  const up=()=>{drag=false;};
+  sv.addEventListener('mousedown',down);window.addEventListener('mousemove',move);window.addEventListener('mouseup',up);
+  sv.addEventListener('touchstart',down,{passive:true});sv.addEventListener('touchmove',move,{passive:false});sv.addEventListener('touchend',up);
+}
+
+
+// ── chips / legend / zones / flags ─────────────────────────────────────
+function drawChips(res){
+  const host=$('chips');host.innerHTML='';
+  const z=res.zones;
+  const items=[['West',z.W,'W',res.blockE],['East',z.E,'E',res.blockE],['North',z.N,'N',res.blockN],['South',z.S,'S',res.blockN],
+    ['SW corner',z.SW,'SW'],['NW corner',z.NW,'NW'],['NE corner',z.NE,'NE'],['SE corner',z.SE,'SE']];
+  items.forEach(([k,v,zk,blk])=>{
+    const d=document.createElement('div');d.className='chip'+(state.hot===zk?' hot':'');
+    d.innerHTML=`<div class="k"><span class="sw" style="background:${ZHEX[zk]}"></span>${k}</div><div class="v">${fmt(v)}</div>`
+      +(blk?`<div class="sub2">block ${fmt(blk)}mm</div>`:'');
+    d.addEventListener('click',()=>{state.hot=state.hot===zk?null:zk;render();});
+    host.appendChild(d);
+  });
+}
+function drawLegend(){
+  let h=['N','E','S','W'].map(zz=>`<span><i style="background:${ZHEX[zz]}"></i>${zz}</span>`).join('')
+    +`<span><i style="background:${ZHEX.NE}"></i>corners</span>`;
+  state.tiers.forEach((t,i)=>h+=`<span><i style="background:${TC_HEX[i%TC_HEX.length]}"></i>Tier ${i+1}</span>`);
+  $('legend').innerHTML=h;
+}
+function drawZones(){
+  const host=$('zonebar');host.innerHTML='';
+  ZONES.forEach(z=>{
+    const b=document.createElement('div');b.className='ztog'+(state.zones[z]?' on':'');b.textContent=z;
+    if(state.zones[z])b.style.background=ZHEX[z];
+    b.addEventListener('click',()=>{state.zones[z]=state.zones[z]?0:1;render();});
+    host.appendChild(b);
+  });
+}
+const fl=(s,l,v)=>`<div class="flag"><span class="st ${s}"></span><span class="lbl">${l}</span><span class="val">${v}</span></div>`;
+function drawFlags(res,p){
+  let h='';
+  const minSp=Math.min(...state.tiers.flatMap(t=>t.settings.map(s=>s.sp)));
+  h+=fl(minSp>=p.minSeat?'ok':'bad','Seat width ≥ minimum',`min ${fmt(minSp)} / ${fmt(p.minSeat)}mm`);
+  const maxRun=Math.max(0,...res.rows.map(r=>r.seatsPerRun));
+  h+=fl(maxRun<=p.maxRun?'ok':'warn','Seats per gangway run',`${maxRun} / ${p.maxRun}`);
+  h+=fl(res.maxRiser<=p.maxRiser?'ok':'warn','Max riser height',`${fmt(res.maxRiser)} / ${fmt(p.maxRiser)}mm`);
+  h+=fl(res.maxAngle<=p.maxAngle?'ok':'warn','Steepest rake angle',`${res.maxAngle.toFixed(1)}° / ${p.maxAngle}°`);
+  // Viewing distance: corner flag (near-side, say SW) to furthest back-row seat.
+  // Furthest seat is in the diagonally opposite corner (NE) — on the outermost facet chord midpoint.
+  // NE corner radius = min(offE,offN), angular sweep = 0..PI/2, facet count p.fNE
+  // Last facet runs from angle (fNE-1)*PI/(2*fNE) to PI/2; midpoint at (fNE-0.5)*PI/(2*fNE)
+  // Seat position in world: NE centre = (pitchW/2+offE, pitchL/2+offN), radius = rNE + depth
+  let vd=0;
+  if(res.rows.length){
+    const pw=p.pitchW/2,pl=p.pitchL/2,D=res.depth;
+    const rNE=Math.min(p.offE,p.offN);
+    const neCx=pw+p.offE-rNE, neCy=pl+p.offN-rNE; // centre of NE facet circle
+    const R=rNE+D;
+    const midAngle=(p.fNE-0.5)*Math.PI/(2*p.fNE); // mid of outermost NE facet
+    const seatX=neCx+R*Math.cos(midAngle), seatY=neCy+R*Math.sin(midAngle);
+    const seatZ=res.backTop+p.eyeH;
+    // SW corner flag: world (-pitchW/2 - offW, -pitchL/2 - offS, 0)
+    const flagX=-(pw+p.offW), flagY=-(pl+p.offS);
+    const dx=seatX-flagX, dy=seatY-flagY;
+    vd=Math.sqrt(dx*dx+dy*dy+seatZ*seatZ)/1000;
+  }
+  h+=fl(vd<=p.maxView?'ok':'warn','Furthest viewing distance (SW flag → NE back row)',`${vd.toFixed(0)} / ${p.maxView}m`);
+  if(p.availDepth>0)h+=fl(res.depth<=p.availDepth?'ok':'bad','Stand depth within site-specific depth constraints',`${fmt(res.depth)} / ${fmt(p.availDepth)}mm`);
+  h+=fl('info','Wheelchair spaces (Accessible Stadia)',`≥ ${fmt(wheelchair(res.total))}`);
+  $('flags').innerHTML=h;
+}
+
+// ── render ─────────────────────────────────────────────────────────────
+function render(){
+  const p=P(),res=computeRows(p);
+  const ded=computeNet(res.total,p);
+  $('cap').textContent=fmt(res.total);
+  $('netline').innerHTML=ded.total>0?`Net ≈ <b>${fmt(ded.net)}</b> <span style="font-size:10px;color:var(--ink2)">— review capacity deduction estimates below</span>`:'';
+  $('meta').innerHTML=`<b>${res.rows.length}</b> rows · <b>${state.tiers.length}</b> tier${state.tiers.length>1?'s':''}<br>`
+    +`seating depth <b>${fmt(res.depth)}</b> mm<br>footprint <b>${fmt(res.footW)}</b>×<b>${fmt(res.footL)}</b> mm`;
+  $('delta').textContent=state.pinned!=null?`vs A (${fmt(state.pinned)}): ${res.total-state.pinned>=0?'+':''}${fmt(res.total-state.pinned)}`:'';
+  if(state.viz==='plan')drawPlan(res,p);else if(state.viz==='section')drawSection(res,p);else drawAxo(res,p);
+  drawZones();drawLegend();drawChips(res);drawFlags(res,p);renderDeductions(res.total,p);updateTierCaps(res);
+  const warns=[];
+  if(res.rows.length>=400)warns.push('Row cap (400) reached.');
+  if(state.tiers.some(t=>t.settings.some(s=>s.sp<=0||s.tread<=0)))warns.push('Tread &amp; seat spacing must be &gt; 0.');
+  if(Object.values(state.zones).every(v=>!v))warns.push('All zones excluded — capacity is 0.');
+  $('note').innerHTML=warns.length?`<span class="warnote">${warns.join(' ')}</span>`
+    :`Plan is schematic (rectilinear); capacity maths is trapezoidal — matches the Excel model at default (17,316). Uncheck zones to model a single stand or partial bowl.`;
+  syncURL();
+}
+function updateTierCaps(res){res.tierCap.forEach((c,i)=>{const el=$('tcap'+i);if(el)el.textContent=fmt(c)+' seats';});}
+
+// ── tier UI ────────────────────────────────────────────────────────────
+function renderTiers(){
+  const host=$('tiers');host.innerHTML='';
+  state.tiers.forEach((t,ti)=>{
+    const col=TC_HEX[ti%TC_HEX.length];
+    const d=document.createElement('div');d.className='tier';
+    let head=`<div class="th"><span class="dot" style="background:${col}"></span><span class="tn">Tier ${ti+1}</span>
+      <span class="tcap" id="tcap${ti}"></span>${state.tiers.length>1?`<button class="rm" data-rmt="${ti}">×</button>`:''}</div>`;
+    let stack=`<div class="g3" style="margin-bottom:8px">
+      <div class="field"><label>Gangway <span class="unit">mm</span></label><input type="number" data-t="${ti}" data-tk="gw" value="${t.gw}"></div>`;
+    if(ti>0)stack+=`<div class="field"><label>Vert. offset <span class="unit">mm</span></label><input type="number" data-t="${ti}" data-tk="vOffset" value="${t.vOffset}"></div>
+      <div class="field"><label>Setback <span class="unit">mm −=oversail</span></label><input type="number" data-t="${ti}" data-tk="setback" value="${t.setback}"></div>`;
+    else stack+=`<div class="field"></div><div class="field"></div>`;
+    stack+=`</div>`;
+    let sets='';
+    t.settings.forEach((s,si)=>{
+      sets+=`<div class="setting"><div class="sh">Setting ${si+1}${t.settings.length>1?` <button class="srm" data-rms="${ti}:${si}">×</button>`:''}</div>
+        <div class="g4">
+          <div class="field"><label>Rows</label><input type="number" data-s="${ti}:${si}" data-sk="rows" value="${s.rows}"></div>
+          <div class="field"><label>C-value</label><input type="number" data-s="${ti}:${si}" data-sk="cval" value="${s.cval}"></div>
+          <div class="field"><label>Tread <span class="unit">mm</span></label><input type="number" data-s="${ti}:${si}" data-sk="tread" value="${s.tread}"></div>
+          <div class="field"><label>Seat sp. <span class="unit">mm</span></label><input type="number" data-s="${ti}:${si}" data-sk="sp" value="${s.sp}"></div>
+        </div></div>`;
+    });
+    d.innerHTML=head+stack+sets+`<button class="addbtn addsetting" data-adds="${ti}">+ Add setting (band within tier)</button>`;
+    host.appendChild(d);
+  });
+  host.querySelectorAll('input[data-s]').forEach(i=>i.addEventListener('input',e=>{const[a,b]=e.target.dataset.s.split(':').map(Number);state.tiers[a].settings[b][e.target.dataset.sk]=parseFloat(e.target.value)||0;render();}));
+  host.querySelectorAll('input[data-t]').forEach(i=>i.addEventListener('input',e=>{state.tiers[+e.target.dataset.t][e.target.dataset.tk]=parseFloat(e.target.value)||0;render();}));
+  host.querySelectorAll('[data-adds]').forEach(b=>b.addEventListener('click',e=>{const ti=+e.target.dataset.adds,l=state.tiers[ti].settings.slice(-1)[0];state.tiers[ti].settings.push({...l,rows:5});renderTiers();render();}));
+  host.querySelectorAll('[data-rms]').forEach(b=>b.addEventListener('click',e=>{const[a,b2]=e.target.dataset.rms.split(':').map(Number);state.tiers[a].settings.splice(b2,1);renderTiers();render();}));
+  host.querySelectorAll('[data-rmt]').forEach(b=>b.addEventListener('click',e=>{state.tiers.splice(+e.target.dataset.rmt,1);renderTiers();render();}));
+}
+
+// ── URL state ──────────────────────────────────────────────────────────
+const BIDS=['pitchW','pitchL','offN','offS','offE','offW','hFirst','struct','eyeH','eyeOff','fNW','fNE','fSE','fSW','availDepth','minSeat','maxRun','maxRiser','maxAngle','maxView'];
+function syncURL(){try{location.replace('#'+btoa(encodeURIComponent(JSON.stringify({t:state.tiers,z:state.zones,d:state.ded,b:BIDS.map(num)}))));}catch(e){}}
+function loadURL(){if(!location.hash)return;try{const o=JSON.parse(decodeURIComponent(atob(location.hash.slice(1))));
+  if(o.t)state.tiers=o.t;if(o.z)state.zones=o.z;if(o.d)state.ded=o.d;if(o.b)BIDS.forEach((id,i)=>{if(o.b[i]!=null)$(id).value=o.b[i];});}catch(e){}}
+
+// ── export ─────────────────────────────────────────────────────────────
+function buildPrint(){
+  const p=P(),res=computeRows(p);drawSection(res,p);const sec=$('viz').innerHTML;render();
+  let sched='<table style="width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;margin:10px 0"><tr style="text-align:left;border-bottom:1px solid #999"><th>Tier</th><th>Set</th><th>Rows</th><th>C-val</th><th>Tread</th><th>Seat sp.</th><th>Gangway</th></tr>';
+  state.tiers.forEach((t,ti)=>t.settings.forEach((s,si)=>sched+=`<tr style="border-bottom:1px solid #ddd"><td>${ti+1}</td><td>${si+1}</td><td>${s.rows}</td><td>${s.cval}</td><td>${fmt(s.tread)}</td><td>${fmt(s.sp)}</td><td>${fmt(t.gw)}</td></tr>`));
+  sched+='</table>';
+  const zt=Object.entries(res.zones).filter(([k,v])=>v).map(([k,v])=>`${k}: ${fmt(v)}`).join(' · ');
+  const ded=computeNet(res.total,p);
+  const dedRows=DED.map(([k,l])=>`${l}: −${fmt(dedLoss(k,res.total,p))}`).filter((s,i)=>state.ded[DED[i][0]].on).join(' · ');
+  $('print').innerHTML=`<div style="font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase">Stadium capacity — concept estimate</div>
+    <div style="font-size:34px;font-family:var(--mono);font-weight:600;margin:6px 0">${fmt(res.total)} <span style="font-size:13px;color:#666">gross</span> &nbsp; <span style="font-size:22px">${fmt(ded.net)}</span> <span style="font-size:13px;color:#666">net</span></div>
+    <div style="font-size:11px;color:#444;font-family:var(--mono)">pitch ${fmt(p.pitchW)}×${fmt(p.pitchL)}mm · ${state.tiers.length} tier(s) · ${res.rows.length} rows · depth ${fmt(res.depth)}mm · footprint ${fmt(res.footW)}×${fmt(res.footL)}mm</div>
+    <h3 style="font-family:var(--mono);font-size:12px;margin:14px 0 4px">Section (to near touchline)</h3>${sec}
+    <h3 style="font-family:var(--mono);font-size:12px;margin:14px 0 4px">Tier / setting schedule</h3>${sched}
+    <h3 style="font-family:var(--mono);font-size:12px;margin:14px 0 4px">Capacity breakdown</h3><div style="font-family:var(--mono);font-size:11px">${zt}</div>
+    <h3 style="font-family:var(--mono);font-size:12px;margin:14px 0 4px">Net deductions</h3><div style="font-family:var(--mono);font-size:11px">${dedRows||'none'} &nbsp;→ net ${fmt(ded.net)}</div>
+    <div style="font-size:9px;color:#888;margin-top:18px;font-family:var(--mono)">Concept estimator — verify against Green Guide (6th ed.) before issue.</div>`;
+  window.print();
+}
+
+// ── wiring ─────────────────────────────────────────────────────────────
+$('viztabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;state.viz=b.dataset.v;[...$('viztabs').querySelectorAll('button')].forEach(x=>x.classList.toggle('on',x===b));render();});
+$('addtier').addEventListener('click',()=>{const l=state.tiers.slice(-1)[0],s=l.settings.slice(-1)[0];state.tiers.push({gw:l.gw,vOffset:8000,setback:-9000,settings:[{rows:12,cval:s.cval,tread:s.tread,sp:s.sp}]});renderTiers();render();});
+$('preset').addEventListener('change',e=>{const v=e.target.value;if(PRESETS[v]){const[w,l,o]=PRESETS[v];$('pitchW').value=w;$('pitchL').value=l;['offN','offS','offE','offW'].forEach(id=>$(id).value=o);}render();});
+$('pinBtn').addEventListener('click',()=>{const res=computeRows(P());if(state.pinned==null){state.pinned=res.total;$('pinBtn').textContent='Clear A';}else{state.pinned=null;$('pinBtn').textContent='Pin A';}render();});
+$('linkBtn').addEventListener('click',()=>{syncURL();navigator.clipboard?.writeText(location.href).then(()=>{$('linkBtn').textContent='Copied';setTimeout(()=>$('linkBtn').textContent='Copy link',1200);}).catch(()=>{});});
+$('printBtn').addEventListener('click',buildPrint);
+$('inputs').addEventListener('input',e=>{if(e.target.id&&!e.target.dataset.s&&!e.target.dataset.t){if(e.target.id==='preset')return;if(['pitchW','pitchL','offN','offS','offE','offW'].includes(e.target.id))$('preset').value='custom';render();}});
+
+loadURL();renderTiers();render();
+</script>
