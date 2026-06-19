@@ -415,10 +415,11 @@ function renderDeductions(gross,p){
 function drawPlan(res,p){
   $('vlabel').textContent='Plan — W stand bottom · N left · E top · S right · tap zone';
   $('hint').textContent='';
-  const W=720,H=520,pad=30;
+  const W=560,H=700,pad=30;
   const pw=p.pitchW/2,pl=p.pitchL/2,D=res.depth;
   const ixE=pw+p.offE,ixW=pw+p.offW,iyN=pl+p.offN,iyS=pl+p.offS;
-  // Screen bounding box: screenX∈[-(iyN+D)..(iyS+D)], screenY∈[-(ixE+D)..(ixW+D)]
+  // W=bottom N=left E=top S=right. screenX=−worldY·s, screenY=−worldX·s
+  // sxMin/Max: N-S axis (short,~68m) → horizontal; syMin/Max: E-W axis (long,~105m) → vertical
   const sxMin=-(iyN+D),sxMax=iyS+D,syMin=-(ixE+D),syMax=ixW+D;
   const s=Math.min((W-2*pad)/(sxMax-sxMin),(H-2*pad)/(syMax-syMin));
   const offX=W/2-((sxMin+sxMax)/2)*s, offY=H/2-((syMin+syMax)/2)*s;
@@ -469,15 +470,24 @@ function drawPlan(res,p){
       svg+=`<polygon points="${allPts.map(([wx,wy])=>PT(wx,wy)).join(' ')}" fill="${col}" stroke="var(--paper2)" stroke-width="0.7" opacity="${dim}" data-z="${z}" style="cursor:pointer"/>`;
     });
   }
-  // Pitch + markings
+  // Pitch + markings. Goals at E(+pw) and W(-pw). Boxes extend along x-axis (infield), width along y-axis.
+  // Pitch rect: corners at world (±pw, ±pl)
+  const px0=SX(-pw,-pl),py0=SY(-pw,-pl); // top-left in screen (E end, N side)
   svg+=`<rect x="${SX(-pw,pl)}" y="${SY(pw,pl)}" width="${pl*2*s}" height="${pw*2*s}" fill="var(--pitch)" opacity="0.92"/>`;
+  // Halfway line: world x=0, y from -pl to +pl → vertical line in screen (runs top-bottom, i.e. E-W direction)
   svg+=`<line x1="${SX(0,-pl)}" y1="${SY(0,-pl)}" x2="${SX(0,pl)}" y2="${SY(0,pl)}" stroke="${gl}" stroke-width="1" opacity="0.8"/>`;
   svg+=`<circle cx="${SX(0,0)}" cy="${SY(0,0)}" r="${9150*s}" fill="none" stroke="${gl}" stroke-width="1" opacity="0.8"/>`;
   svg+=`<circle cx="${SX(0,0)}" cy="${SY(0,0)}" r="1.6" fill="${gl}"/>`;
-  // Goals at E (+pw) and W (-pw); penalty/6yd boxes extend infield
+  // Penalty boxes: goal at world x=sign*pw; box extends infield (x-axis), ±peny wide (y-axis)
   const box=sign=>{const gx=sign*pw,pen=16500,peny=20150,six=5500,sixy=9160,ps=11000;
-    return `<rect x="${SX(Math.min(gx,gx-sign*pen),peny)}" y="${SY(Math.max(gx,gx-sign*pen),peny)}" width="${peny*2*s}" height="${pen*s}" fill="none" stroke="${gl}" stroke-width="1" opacity="0.8"/>`
-      +`<rect x="${SX(Math.min(gx,gx-sign*six),sixy)}" y="${SY(Math.max(gx,gx-sign*six),sixy)}" width="${sixy*2*s}" height="${six*s}" fill="none" stroke="${gl}" stroke-width="1" opacity="0.8"/>`
+    // Box rect: world x from gx to gx-sign*pen, y from -peny to +peny
+    // In screen: SX uses worldY, SY uses worldX → box screenX span = peny*2*s, screenY span = pen*s
+    const bx1=SX(0,peny),bx2=SX(0,-peny); // screenX at ±peny
+    const by1=SY(gx,0),by2=SY(gx-sign*pen,0); // screenY at goal line and box line
+    const sx1=SX(0,sixy),sx2=SX(0,-sixy);
+    const sy1=SY(gx,0),sy2=SY(gx-sign*six,0);
+    return `<rect x="${Math.min(bx1,bx2)}" y="${Math.min(by1,by2)}" width="${Math.abs(bx2-bx1)}" height="${Math.abs(by2-by1)}" fill="none" stroke="${gl}" stroke-width="1" opacity="0.8"/>`
+      +`<rect x="${Math.min(sx1,sx2)}" y="${Math.min(sy1,sy2)}" width="${Math.abs(sx2-sx1)}" height="${Math.abs(sy2-sy1)}" fill="none" stroke="${gl}" stroke-width="1" opacity="0.8"/>`
       +`<circle cx="${SX(gx-sign*ps,0)}" cy="${SY(gx-sign*ps,0)}" r="1.6" fill="${gl}"/>`;};
   svg+=box(1)+box(-1);
   // Cardinal labels (W=bottom, N=left, E=top, S=right)

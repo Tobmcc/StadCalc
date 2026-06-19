@@ -1,0 +1,54 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Stadium Tools">
+<meta name="theme-color" content="#17160F">
+<title>Stadium Tools</title>
+<style>
+  :root{
+    --paper:#E9E5DB; --paper2:#E2DDD0; --paper3:#EFEBE0; --ink:#17160F; --ink2:#56534A;
+    --line:#C3BCAC; --line2:#D6D0C1; --accent:#C24228;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:24px;min-height:100vh;
+    background-image:linear-gradient(var(--line2) 1px,transparent 1px),linear-gradient(90deg,var(--line2) 1px,transparent 1px);
+    background-size:22px 22px;background-position:-1px -1px}
+  .wrap{max-width:480px;width:100%}
+  h1{font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;margin:0 0 4px;text-align:center}
+  .sub{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink2);text-transform:uppercase;text-align:center;margin-bottom:32px}
+  .card{display:block;background:var(--paper2);border:1px solid var(--line);border-radius:3px;
+    padding:20px 18px;margin-bottom:14px;text-decoration:none;color:var(--ink);transition:background .15s,border-color .15s}
+  .card:active{background:var(--paper3)}
+  .card .icon{width:34px;height:34px;margin-bottom:12px;display:block}
+  .card .name{font-family:var(--mono);font-size:13px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;margin-bottom:4px}
+  .card .desc{font-family:var(--sans);font-size:13px;color:var(--ink2);line-height:1.4}
+  .card .go{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-top:10px;display:flex;align-items:center;gap:4px}
+  .foot{font-family:var(--mono);font-size:9.5px;color:var(--ink2);text-align:center;margin-top:18px;letter-spacing:.05em}
+</style>
+
+<div class="wrap">
+  <h1>Stadium Tools</h1>
+  <div class="sub">Capacity-based design calculators</div>
+
+  <a class="card" href="bowl-calculator.html">
+    <svg class="icon" viewBox="0 0 64 64" fill="none"><rect x="6" y="38" width="52" height="12" rx="2" fill="#4E8C6A" opacity=".9"/><rect x="2" y="22" width="10" height="16" rx="2" fill="#8A6BA6"/><rect x="52" y="22" width="10" height="16" rx="2" fill="#3D6E8E"/><rect x="6" y="20" width="52" height="6" rx="2" fill="#C46A3A"/></svg>
+    <div class="name">Bowl Capacity Calculator</div>
+    <div class="desc">Sightline-derived stadium bowl capacity — plan, section, 3D massing, Green Guide compliance flags.</div>
+    <div class="go">Open →</div>
+  </a>
+
+  <a class="card" href="design-considerations.html">
+    <svg class="icon" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="22" r="14" fill="none" stroke="#C98A2B" stroke-width="3"/><rect x="14" y="40" width="36" height="18" rx="3" fill="#4E8C6A" opacity=".9"/></svg>
+    <div class="name">Design Considerations</div>
+    <div class="desc">Capacity-driven sanitary, wheelchair, concessions, exit width &amp; turnstile calculations across UK and UEFA standards.</div>
+    <div class="go">Open →</div>
+  </a>
+
+  <div class="foot">Add either tool directly to your home screen for one-tap launch.</div>
+</div>

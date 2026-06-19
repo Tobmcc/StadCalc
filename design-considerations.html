@@ -1,0 +1,463 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Design Considerations">
+<meta name="theme-color" content="#17160F">
+<title>Design Considerations — capacity-based calculator</title>
+<link rel="manifest" id="pwaManifest">
+<link rel="apple-touch-icon" id="pwaIcon">
+<script>
+const ICON_SVG=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="110" fill="#17160F"/><circle cx="256" cy="180" r="70" fill="none" stroke="#C98A2B" stroke-width="14"/><rect x="170" y="280" width="172" height="130" rx="8" fill="#4E8C6A" opacity=".9"/><text x="256" y="470" text-anchor="middle" font-family="monospace" font-size="46" font-weight="700" fill="#E9E5DB">DC</text></svg>`;
+const iconUrl=URL.createObjectURL(new Blob([ICON_SVG],{type:'image/svg+xml'}));
+document.getElementById('pwaIcon').href=iconUrl;
+const manifest={name:'Design Considerations',short_name:'DC Calc',start_url:location.href.split('#')[0],
+  display:'standalone',background_color:'#E9E5DB',theme_color:'#17160F',icons:[{src:iconUrl,sizes:'512x512',type:'image/svg+xml'}]};
+document.getElementById('pwaManifest').href=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/json'}));
+</script>
+<style>
+  :root{
+    --paper:#E9E5DB; --paper2:#E2DDD0; --paper3:#EFEBE0; --ink:#17160F; --ink2:#56534A;
+    --line:#C3BCAC; --line2:#D6D0C1; --accent:#C24228; --accent-d:#9E3520;
+    --ok:#3F7A52; --warn:#C0782A; --bad:#B23A28;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+    padding:max(14px,env(safe-area-inset-top)) 14px calc(40px + env(safe-area-inset-bottom));
+    max-width:880px;margin:0 auto;
+    background-image:linear-gradient(var(--line2) 1px,transparent 1px),linear-gradient(90deg,var(--line2) 1px,transparent 1px);
+    background-size:22px 22px;background-position:-1px -1px}
+  h1{font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;margin:0 0 2px}
+  .sub{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink2);text-transform:uppercase;margin-bottom:12px}
+  .card{background:var(--paper2);border:1px solid var(--line);border-radius:3px;margin-bottom:12px}
+  .hero{padding:16px 18px}
+  .field label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin-bottom:4px}
+  .field input,.field select{width:100%;font-family:var(--mono);font-size:17px;padding:9px 10px;border:1px solid var(--line);
+    border-radius:2px;background:var(--paper);color:var(--ink)}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .sechead{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);
+    padding:12px 14px 6px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--line)}
+  .sechead:first-of-type{border-top:0}
+  .src{font-family:var(--mono);font-size:9px;color:var(--ink2);font-weight:400;letter-spacing:0;text-transform:none;margin-left:auto;text-align:right}
+  .stat{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line)}
+  .stat.two{grid-template-columns:repeat(2,1fr)}
+  .stat.one{grid-template-columns:1fr}
+  .scell{background:var(--paper2);padding:10px 12px}
+  .scell .k{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2)}
+  .scell .v{font-family:var(--mono);font-weight:600;font-size:19px;margin-top:2px;font-variant-numeric:tabular-nums}
+  .scell .v small{font-size:11px;font-weight:400;color:var(--ink2)}
+  .note{font-family:var(--mono);font-size:10px;color:var(--ink2);line-height:1.5;padding:8px 14px 12px}
+  .pillrow{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px}
+  .pill{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;border:1px solid var(--line);border-radius:12px;
+    padding:5px 11px;color:var(--ink2);background:var(--paper);cursor:default}
+  .pill.priority{border-color:var(--ink);color:var(--ink);background:var(--paper3)}
+  .foot{font-family:var(--mono);font-size:9.5px;color:var(--ink2);text-align:center;padding:6px 10px 0;letter-spacing:.05em}
+  .linkbtn{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    background:transparent;border:1px solid var(--line);border-radius:3px;padding:9px 12px;color:var(--ink);cursor:pointer}
+  .topbar{display:flex;gap:8px;margin-bottom:12px}
+  @media(max-width:480px){.stat{grid-template-columns:repeat(2,1fr)!important}.row2{grid-template-columns:1fr}}
+</style>
+
+<h1>Design Considerations</h1>
+<div class="sub">Capacity-based stadium design calculator</div>
+
+<div class="topbar"><button class="linkbtn" id="linkBtn">Copy link</button></div>
+
+<div class="card">
+  <div class="hero">
+    <div class="row2">
+      <div class="field"><label>Expected capacity</label><input type="number" id="cap" value="6000" step="100"></div>
+      <div class="field"><label>Offer level</label>
+        <select id="offer">
+          <option>GA</option><option selected>GA+/Copper/PGA</option><option>Bronze</option>
+          <option>Silver</option><option>Gold</option><option>Boxes/Loge Boxes</option><option>Platinum/Chairman's Box/Tunnel Club</option>
+        </select></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="sechead">Floor area <span class="src" id="srcFloor"></span></div>
+  <div class="hero" style="padding:10px 14px 4px">
+    <div class="row2">
+      <div class="field"><label>Density override <span style="text-transform:none;color:var(--ink2)">m²/person — blank uses KSS default</span></label>
+        <input type="number" id="densityOverride" step="0.05" placeholder="auto"></div>
+      <div class="field" id="occField" style="display:none">
+        <label>Concourse occupancy <span style="text-transform:none;color:var(--ink2)">% of capacity present at once, for GG6 minimum</span></label>
+        <input type="number" id="occOverride" step="5" placeholder="auto"></div>
+    </div>
+    <div class="field" id="precedentField" style="display:none;margin-top:10px">
+      <label>Precedent range (steering only)</label>
+      <div style="font-family:var(--mono);font-size:13px" id="precedentText"></div>
+    </div>
+  </div>
+  <div class="stat" id="floorStat"></div>
+  <div class="note" id="floorNote"></div>
+</div>
+
+<div class="card">
+  <div class="sechead">Sanitary appliances <span class="src" id="srcSan"></span></div>
+  <div class="hero" style="padding:10px 14px 4px">
+    <div class="field"><label>Use case</label>
+      <select id="usecase">
+        <option>GA / GA+</option><option>Hospitality</option><option>Non-Match Day Restaurant</option>
+        <option>Non-Match Day Non-Interval</option><option>Fan Zone</option><option>⚠ UEFA (2025) — not recommended, see note</option>
+      </select></div>
+  </div>
+  <div class="hero" style="padding:6px 14px 8px">
+    <div class="row2">
+      <div class="field"><label>Male provision target <span id="mPct" style="color:var(--ink)"></span></label>
+        <input type="range" id="mSlider" min="0" max="100" value="80" style="width:100%"></div>
+      <div class="field"><label>Female provision target <span id="fPct" style="color:var(--ink)"></span></label>
+        <input type="range" id="fSlider" min="0" max="100" value="30" style="width:100%"></div>
+    </div>
+    <div class="note" style="padding:6px 0 0" id="coverageNote"></div>
+  </div>
+  <div id="sanTables"></div>
+  <div class="note">a) Figures are global requirements — local distribution between toilet blocks may increase fixture numbers. b) Excludes accessible provision (see Wheelchair section). c) At least one wheelchair-accessible unisex toilet should be provided at each location with sanitary facilities. d) At least one ambulant-accessible WC cubicle in separate-sex accommodation. e) Where 4+ WC cubicles, one 1200mm-wide larger cubicle in both male and female toilets.</div>
+</div>
+
+<div class="card">
+  <div class="sechead">Reference tables &amp; when to use them <span class="src">FSADC · BS 6465 · UEFA 2025</span></div>
+  <div id="tableGuide" style="font-family:var(--mono);font-size:11px;line-height:1.7;padding:6px 14px 12px"></div>
+</div>
+
+<div class="card">
+  <div class="sechead">Wheelchair &amp; companion provision <span class="src">SGSA Accessible Stadia 2003</span></div>
+  <div class="stat two" id="wcStat"></div>
+  <div class="note">WCU positions: under 10,000 = min(6, 1 per 100); 10,000–20,000 = 100 + 5/1,000 above 10k; 20,000–40,000 = 150 + 3/1,000 above 20k; 40,000+ = 210 + 2/1,000 above 40k. WCU WCs = positions ÷ 15, rounded up at every band.</div>
+  <div class="stat one" id="companionStat"></div>
+  <div class="note">A companion seat is provided directly beside each wheelchair space, so companion count tracks WCU Positions 1:1.</div>
+</div>
+
+<div class="card">
+  <div class="sechead">Amenity seating <span class="src">SGSA Accessible Stadia 2015 supplementary guidance</span></div>
+  <div class="note" style="padding:10px 14px 6px">Amenity and easy access spaces are <strong>not</strong> wheelchair spaces — they're standard seats reserved for ambulant disabled spectators who can transfer from a wheelchair or walk short distances but need easier, step-free access (typically near entrances/exits, with a wider seatway and fewer steps to reach). Calculated independently from wheelchair provision, using the same sliding-scale structure against total capacity.</div>
+  <div class="stat one" id="ambStat"></div>
+  <div class="note" id="ambNote"></div>
+</div>
+
+<div class="card">
+
+  <div class="sechead">Concessions <span class="src">GG6</span></div>
+  <div class="stat" id="concStat"></div>
+  <div class="note" id="concNote">Counter length given in metres (Recommended / Minimum) and as a count of 1.2m counter-length units (KSS Recommended).</div>
+</div>
+
+<div class="card">
+  <div class="sechead">Exit width <span class="src">GG6</span></div>
+  <div class="stat two" id="exitStat"></div>
+  <div class="note" id="exitNote"></div>
+</div>
+
+<div class="card">
+  <div class="sechead">Turnstiles <span class="src">GG6</span></div>
+  <div class="stat one" id="tsStat"></div>
+</div>
+
+<div class="card">
+  <div class="sechead">Bowl settings by offer level <span class="src">GG6</span></div>
+  <div class="stat" id="bowlStat"></div>
+  <div class="note" id="bowlNote"></div>
+</div>
+
+<div class="foot">Concept estimator — verify against GG6 / FSADC / BS 6465 / SGSA Accessible Stadia before issue.</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const ru=x=>Math.ceil(Math.round(x*1e6)/1e6);
+const fmt1=n=>{const r=Math.round(n*100)/100;return r.toLocaleString('en-GB',{maximumFractionDigits:2});};
+const fmtInt=n=>Math.round(n).toLocaleString('en-GB');
+
+// ── Floor area: offer-level density table (KSS Recommended vs GG6 Minimum) ──
+// minD is the TRUE GG6 published density (100% basis). occFactor is the proportion of
+// capacity GG6 anticipates being on the concourse/floor area at any one time — only GA
+// and GA+/Copper/PGA are concourse-style offers where GG6 anticipates ~50% presence;
+// hospitality tiers (Bronze and above) assume the full seated/F&B capacity is present.
+const FLOOR={
+  GA:        {kssD:0.35, minD:0.50, occFactor:0.50},
+  'GA+/Copper/PGA':{kssD:1.00, minD:0.71, occFactor:0.50},
+  Bronze:    {kssD:1.40, minD:0.715, occFactor:1.00},
+  Silver:    {kssD:1.80, minD:null, occFactor:1.00},
+  Gold:      {kssD:2.00, minD:null, occFactor:1.00},
+  'Boxes/Loge Boxes':{kssD:2.375, minD:null, occFactor:1.00}, // shares Gold's bowl/tread/C-value settings; own density range per precedent
+  "Platinum/Chairman's Box/Tunnel Club":{kssD:3.00, minD:null, occFactor:1.00}
+};
+// Precedent target densities (m²/person) where GG6 publishes no minimum — for steering only, not a code minimum
+const PRECEDENT={
+  'GA+/Copper/PGA':{lo:0.8,hi:1.0,examples:'Copper (Premium GA/GA+): Anfield Carlsberg Dugout, Aston Villa Terrace View (0.8) · PGA built density: 1.0'},
+  Bronze:{lo:1.3,hi:1.3,examples:'THFC West & East, Aston Villa 1982'},
+  Silver:{lo:1.75,hi:1.75,examples:'Wembley Number Nine, Aston Villa Corner Flag'},
+  Gold:{lo:2.25,hi:2.5,examples:'THFC Tunnel Club, Anfield Directors'},
+  'Boxes/Loge Boxes':{lo:2.25,hi:3.0,examples:'Boxes: THFC L4 East, Anfield Suites (2.5–3.0) · Loge Boxes: THFC L4 Loges, Aston Villa Lounge (2.25–2.5)'},
+  "Platinum/Chairman's Box/Tunnel Club":{lo:3.0,hi:3.0,examples:'THFC H Club, Arsenal Diamond Club, Geranium Copenhagen'}
+};
+function floorArea(cap,offer,override,occOverride){
+  const d=FLOOR[offer];
+  const density=(override!=null&&override>0)?override:d.kssD;
+  const kssNet=cap*density, kssGross=kssNet/0.6, kssSupport=kssGross*0.4;
+  let minNet=null,minGross=null,minSupport=null,effOcc=null;
+  if(d.minD!=null){
+    effOcc=(occOverride!=null&&occOverride>=0)?occOverride:d.occFactor;
+    minNet=cap*effOcc*d.minD; minGross=minNet/0.6; minSupport=minGross*0.4;
+  }
+  return{kssNet,kssGross,kssSupport,minNet,minGross,minSupport,density,defaultDensity:d.kssD,
+    minDensity:d.minD,occFactor:d.occFactor,effOcc};
+}
+
+// ── Use-case map: drives table choice + default M/F provision targets ──
+// Targets are independent overprovision percentages (not a complementary split) —
+// e.g. 80/30 means "provide for 80% of capacity as male AND 30% as female", which
+// sums past 100% deliberately so neither demographic is under-served as the mix varies.
+const USECASE={
+  'GA / GA+':          {table:'fsadc',  m:0.80, f:0.30, note:'FSADC — recommended split 80% / 30%'},
+  'Hospitality':       {table:'t7',     m:0.80, f:0.30, note:'BS 6465 Table 7 — recommended split 80% / 30%'},
+  'Non-Match Day Restaurant':    {table:'t10',    m:0.50, f:0.50, note:'FSADC Table 10 — recommended split 50% / 50%'},
+  'Non-Match Day Non-Interval':  {table:'t8',     m:0.50, f:0.50, note:'BS 6465 Table 8 — recommended split 50% / 50%'},
+  'Fan Zone':          {table:'t11',    m:0.80, f:0.50, note:'FSADC Table 11 — recommended split 80% / 50%'},
+  '⚠ UEFA (2025) — not recommended, see note': {table:'uefa',   m:0.80, f:0.25, note:'UEFA Art.19.02 — set ratio 80% / 25%. Not currently recommended: results in male WC overprovision and urinal underprovision relative to UK guidance.'}
+};
+function fsadc(cap,m,f){
+  return{
+    wcM: (cap*m)>600?ru((cap*m)/600):2,
+    wcF: (cap*f)>35?ru((cap*f)/35):2,
+    ur:  ru((cap*m)/70),
+    whbM:(cap*m)>300?ru((cap*m)/300):2,
+    whbF:(cap*f)>70?ru((cap*f)/70):2
+  };
+}
+function bs6465t7(cap,m,f){
+  const wcM=2+((cap*m)>250?ru(((m*cap)-250)/250):0);
+  const wcF=2+((cap*f)<500?ru(((cap*f)-20)/20):24+ru(((cap*f)-500)/25));
+  const ur=2+((cap*m)>50?ru(((cap*m)-50)/50):0);
+  const whbM=wcM+ru(ur/5);
+  const whbF=1+ru(wcF/2);
+  return{wcM,wcF,ur,whbM,whbF};
+}
+function bs6465t8(cap,m,f){
+  const wcM=1+((cap*m)>250?ru(((cap*m)-250)/500):0);
+  let wcF; const fv=cap*f;
+  if(fv>100)wcF=2+2+ru((fv-100)/50); else if(fv>70)wcF=2+2; else if(fv>40)wcF=2+1; else wcF=2+0;
+  const ur=(cap*m)>100?2+ru(((cap*m)-100)/100):ru((cap*m)/50);
+  const whbM=wcM+ru(ur/5);
+  const whbF=1+ru(wcF/2);
+  return{wcM,wcF,ur,whbM,whbF};
+}
+// FSADC Table 10 — restaurants & places with seating for eating/drinking
+function fsadcT10(cap,m,f){
+  const M=cap*m,F=cap*f;
+  const wcM=M<=150?2:2+ru((M-150)/250);
+  const ur=M<=120?ru(M/60):ru(120/60)+ru((M-120)/100);
+  let wcF; if(F<=30)wcF=2; else if(F<=120)wcF=2+ru((F-30)/30); else wcF=2+ru(90/30)+ru((F-120)/60);
+  const whbM=wcM+ru(ur/5);
+  const whbF=wcF;
+  return{wcM,wcF,ur,whbM,whbF};
+}
+// FSADC Table 11 — licensed pubs, bars, nightclubs, discotheques
+function fsadcT11(cap,m,f){
+  const M=cap*m,F=cap*f;
+  const wcM=M<=150?2:2+ru((M-150)/200);
+  const ur=M<=200?ru(M/50):ru(200/50)+ru((M-200)/70);
+  let wcF; if(F<=25)wcF=2; else if(F<=200)wcF=2+ru((F-25)/25); else wcF=2+ru(175/25)+ru((F-200)/35);
+  const whbM=wcM+ru(ur/5);
+  const whbF=1+ru(wcF/2);
+  return{wcM,wcF,ur,whbM,whbF};
+}
+// UEFA Stadium Infrastructure Regulations 2025, Article 19.02
+function uefa(cap,m,f){
+  const M=cap*m,F=cap*f;
+  const wcM=ru(M/250), ur=ru(M/125), wcF=ru(F/120); // home sector ratio; visiting sector uses /80
+  return{wcM,wcF,ur,whbM:wcM,whbF:wcF}; // sinks 1:1 with seated toilets per Art.19.02
+}
+function sanCalc(table,cap,m,f){
+  if(table==='fsadc')return fsadc(cap,m,f);
+  if(table==='t7')return bs6465t7(cap,m,f);
+  if(table==='t8')return bs6465t8(cap,m,f);
+  if(table==='t10')return fsadcT10(cap,m,f);
+  if(table==='t11')return fsadcT11(cap,m,f);
+  if(table==='uefa')return uefa(cap,m,f);
+}
+
+// ── Wheelchair (Accessible Stadia 2003) — ROUNDED at every band (see note) ──
+function wheelchair(cap){
+  let pos;
+  if(cap>39999) pos=ru(210+(2*(cap-40000)/1000));
+  else if(cap>19999) pos=ru(150+(3*(cap-20000)/1000));
+  else if(cap>9999) pos=ru(100+(5*(cap-10000)/1000));
+  else pos=(cap/100>6)?ru(cap/100):6;
+  const wcs=ru(pos/15);
+  return{pos,wcs};
+}
+
+// Companion seating — 1 seat directly beside each wheelchair space.
+function companion(wcPos){ return wcPos; }
+
+// Amenity (ambulant disabled) seating — indicative ratio against wheelchair positions.
+// Not a literal table in the source workbook; commonly cited guidance pairs roughly
+// 1 amenity seat with each wheelchair space.
+// Amenity & easy access spaces — SGSA Accessible Stadia 2015 supplementary guidance.
+// Same banding shape as the 2003 wheelchair scale but a genuinely separate calculation
+// (not a ratio derived from wheelchair positions) — confirmed against named source table.
+function amenity(cap){
+  let pos;
+  if(cap>39999) pos=ru(210+(2*(cap-40000)/1000));
+  else if(cap>19999) pos=ru(150+(3*(cap-20000)/1000));
+  else if(cap>9999) pos=ru(100+(5*(cap-10000)/1000));
+  else pos=(cap/100>6)?ru(cap/100):6;
+  return pos;
+}
+
+// ── Concessions, exit width, turnstiles (GG6) ──
+const concessions=cap=>({rec:ru(cap/150),min:ru(cap/200),kss:ru(cap/120)});
+const exitWidth=cap=>({steppedLow:cap/66/8,steppedHigh:cap/66/6,flatLow:cap/82/8,flatHigh:cap/82/6});
+const turnstiles=cap=>ru(cap/660);
+
+// ── Bowl settings by offer level (GG6) ──
+const BOWL={
+  GA:     {treadMin:'660 existing / 700 min, 800 preferred (new)',treadKSS:'800 (840 if double-step)',cMin:90,cKSS:90,spMin:'460 existing / 500 new',spKSS:500},
+  'GA+/Copper/PGA':{treadMin:'660 existing / 700 min, 800 preferred (new)',treadKSS:'800 (840 if double-step)',cMin:90,cKSS:90,spMin:'460 existing / 500 new',spKSS:500},
+  Bronze: {treadMin:'660 existing / 700 min, 800 preferred (new)',treadKSS:'800 (840 if double-step)',cMin:90,cKSS:90,spMin:'460 existing / 500 new',spKSS:500},
+  Silver: {treadMin:'660 existing / 700 min, 800 preferred (new)',treadKSS:'900',cMin:90,cKSS:100,spMin:'460 existing / 500 new',spKSS:550},
+  Gold:   {treadMin:'660 existing / 700 min, 800 preferred (new)',treadKSS:'900',cMin:120,cKSS:120,spMin:'460 existing / 500 new',spKSS:550},
+  'Boxes/Loge Boxes':{treadMin:'660 existing / 700 min, 800 preferred (new)',treadKSS:'900',cMin:120,cKSS:120,spMin:'460 existing / 500 new',spKSS:550},
+  "Platinum/Chairman's Box/Tunnel Club":{treadMin:'660 existing / 700 min, 800 preferred (new)',treadKSS:'1000',cMin:120,cKSS:120,spMin:'460 existing / 500 new',spKSS:610}
+};
+
+function scell(k,v,sub){return `<div class="scell"><div class="k">${k}</div><div class="v">${v}${sub?` <small>${sub}</small>`:''}</div></div>`;}
+
+const state={sliderTouched:false};
+
+function render(){
+  const cap=Math.max(0,parseFloat($('cap').value)||0);
+  const offer=$('offer').value;
+
+  // Floor area
+  const override=parseFloat($('densityOverride').value)||null;
+  const occOverrideRaw=$('occOverride').value;
+  const occOverride=occOverrideRaw!==''?parseFloat(occOverrideRaw)/100:null;
+  const fa=floorArea(cap,offer,override,occOverride);
+  $('srcFloor').textContent=`GG6 · ${offer} density`;
+  const usingOverride=override!=null&&override>0;
+  let fHtml=`<div class="stat two">
+    ${scell('KSS Net Area',fmtInt(fa.kssNet),'m²')}${scell('KSS Gross Area',fmtInt(fa.kssGross),'m²')}
+  </div>`;
+  if(fa.minNet!=null){
+    fHtml+=`<div class="stat two">
+      ${scell('GG6 Min Net Area',fmtInt(fa.minNet),'m²')}${scell('GG6 Min Gross Area',fmtInt(fa.minGross),'m²')}
+    </div>`;
+  }
+  $('floorStat').innerHTML=fHtml;
+  let calcLine=`Calculation: ${fmtInt(cap)} people × ${fa.density}m²/person${usingOverride?' (override)':' (KSS default)'} = ${fmtInt(fa.kssNet)}m² net ÷ 0.6 = ${fmtInt(fa.kssGross)}m² gross.`;
+  if(fa.minNet!=null){
+    const occPct=Math.round(fa.effOcc*100);
+    calcLine+=` GG6 minimum: ${fmtInt(cap)} people × ${occPct}% concourse occupancy × ${fa.minDensity}m²/person = ${fmtInt(fa.minNet)}m² net. `
+      +`GG6 anticipates only around ${occPct}% of capacity will be on the concourse at any one time` + (occPct<100?'':' for this offer level, as it is a seated F&B-style offer where the full audience is assumed present') + ' — adjust the occupancy figure above if a different usage pattern is expected for this scheme.';
+  } else calcLine+=' GG6 does not publish a minimum density for this offer level — KSS Recommended only.';
+  $('floorNote').textContent=calcLine;
+  $('densityOverride').placeholder=`auto (${fa.defaultDensity})`;
+  if(fa.minNet!=null){
+    $('occField').style.display='';
+    $('occOverride').placeholder=`auto (${Math.round(fa.occFactor*100)})`;
+  } else $('occField').style.display='none';
+  if(PRECEDENT[offer]){
+    $('precedentField').style.display='';
+    const pr=PRECEDENT[offer];
+    $('precedentText').textContent=pr.lo===pr.hi?`${pr.lo} m²/pp — ${pr.examples}`:`${pr.lo}–${pr.hi} m²/pp — ${pr.examples}`;
+  } else $('precedentField').style.display='none';
+
+  // Sanitary — use-case driven
+  const ucKey=$('usecase').value, uc=USECASE[ucKey];
+  // sliders default to use-case targets unless user has touched them this session
+  if(!state.sliderTouched){$('mSlider').value=uc.m*100;$('fSlider').value=uc.f*100;}
+  const mPct=parseFloat($('mSlider').value)/100, fPct=parseFloat($('fSlider').value)/100;
+  $('mPct').textContent=Math.round(mPct*100)+'%';
+  $('fPct').textContent=Math.round(fPct*100)+'%';
+  $('coverageNote').textContent=`Designed to provide for ${Math.round(mPct*100)}% of capacity as male and ${Math.round(fPct*100)}% as female — `
+    +`${Math.round((mPct+fPct)*100)}% combined coverage against ${fmtInt(cap)} capacity. ${uc.note}`;
+  const sres=sanCalc(uc.table,cap,mPct,fPct);
+  $('srcSan').textContent=({fsadc:'FSADC Table 2',t7:'BS 6465 Table 7',t8:'BS 6465 Table 8',t10:'FSADC Table 10',t11:'FSADC Table 11',uefa:'UEFA Art.19.02'})[uc.table];
+  const sanRow=(label,key,formula)=>`<div class="stat one">
+    <div class="scell"><div class="k">${label}</div><div class="v">${sres[key]} <small>${formula}</small></div></div>
+  </div>`;
+  $('sanTables').innerHTML=
+    sanRow('Male WC','wcM','')+sanRow('Male Urinals','ur','')+sanRow('Male WHB','whbM','')+
+    sanRow('Female WC','wcF','')+sanRow('Female WHB','whbF','');
+
+  // Reference table guide
+  $('tableGuide').innerHTML=Object.entries(USECASE).map(([k,v])=>
+    `<div style="padding:4px 0;${k===ucKey?'color:var(--accent-d);font-weight:600':'color:var(--ink2)'}">${k}: ${v.note}</div>`
+  ).join('');
+
+  // Wheelchair + companion
+  const wc=wheelchair(cap);
+  const comp=companion(wc.pos);
+  $('wcStat').innerHTML=scell('WCU Positions',fmtInt(wc.pos))+scell('WCU WCs',fmtInt(wc.wcs));
+  $('companionStat').innerHTML=scell('Companion seats',fmtInt(comp));
+
+  // Amenity (ambulant disabled) seating
+  const amen=amenity(cap);
+  $('ambStat').innerHTML=scell('Amenity / easy access spaces',fmtInt(amen));
+  $('ambNote').textContent=`Calculation: same sliding scale as wheelchair provision, applied independently to total capacity (${fmtInt(cap)}) — under 10,000 = min(6, 1 per 100); 10,000–20,000 = 100 + 5/1,000 above 10k; 20,000–40,000 = 150 + 3/1,000 above 20k; 40,000+ = 210 + 2/1,000 above 40k. This is a separate requirement from WCU Positions, not a ratio of it.`;
+
+  // Concessions
+  const cc=concessions(cap);
+  $('concStat').innerHTML=scell('Recommended',fmtInt(cc.rec),'m')+scell('Minimum',fmtInt(cc.min),'m')+scell('KSS Recommended',fmtInt(cc.kss),'× 1.2m units');
+  $('concNote').textContent=`Calculation: ${fmtInt(cap)} ÷ 150 people/m (recommended) = ${fmtInt(cc.rec)}m. Minimum uses ÷200; KSS Recommended uses ÷120, expressed as 1.2m counter-length units.`;
+
+  // Exit width
+  const ew=exitWidth(cap);
+  $('exitStat').innerHTML=
+    scell('Low fire risk — stepped',fmt1(ew.steppedLow),'m')+scell('Low fire risk — flat',fmt1(ew.flatLow),'m')+
+    scell('High fire risk — stepped',fmt1(ew.steppedHigh),'m')+scell('High fire risk — flat',fmt1(ew.flatHigh),'m');
+  $('exitNote').textContent=`Calculation: ${fmtInt(cap)} ÷ 66 people/m/min (stepped) ÷ 8 min escape time = ${fmt1(ew.steppedLow)}m. `
+    +`Flat routes use 82 people/m/min. 6-minute escape time used for high fire risk.`;
+
+  // Turnstiles
+  $('tsStat').innerHTML=scell('Turnstiles required',fmtInt(turnstiles(cap)));
+
+  // Bowl settings
+  const b=BOWL[offer];
+  $('bowlStat').innerHTML=
+    scell('Tread depth — min',b.treadMin)+scell('Tread depth — KSS',b.treadKSS)+
+    scell('C-value — min',b.cMin)+scell('C-value — KSS',b.cKSS)+
+    scell('Seat spacing — min',b.spMin)+scell('Seat spacing — KSS',b.spKSS+' mm');
+  $('bowlNote').textContent='C-value anthropometrics: eye height 1200mm, eye offset from riser 150mm, eye height standing 1600mm, eye height wheelchair 1250mm, eye height offset from front of riser 900mm + barrier width.';
+
+  syncURL();
+}
+
+function syncURL(){
+  try{location.replace('#'+btoa(encodeURIComponent(JSON.stringify({
+    c:$('cap').value,o:$('offer').value,u:$('usecase').value,
+    m:$('mSlider').value,f:$('fSlider').value,d:$('densityOverride').value,oc:$('occOverride').value,
+    t:state.sliderTouched?1:0
+  }))));}catch(e){}
+}
+function loadURL(){
+  if(!location.hash)return;
+  try{const o=JSON.parse(decodeURIComponent(atob(location.hash.slice(1))));
+    if(o.c!=null)$('cap').value=o.c;
+    if(o.o)$('offer').value=o.o;
+    if(o.u)$('usecase').value=o.u;
+    if(o.d!=null)$('densityOverride').value=o.d;
+    if(o.oc!=null)$('occOverride').value=o.oc;
+    if(o.t){state.sliderTouched=true;if(o.m!=null)$('mSlider').value=o.m;if(o.f!=null)$('fSlider').value=o.f;}
+  }catch(e){}
+}
+$('linkBtn').addEventListener('click',()=>{syncURL();
+  navigator.clipboard?.writeText(location.href).then(()=>{$('linkBtn').textContent='Copied';setTimeout(()=>$('linkBtn').textContent='Copy link',1200);}).catch(()=>{});});
+$('cap').addEventListener('input',render);
+$('offer').addEventListener('change',render);
+$('densityOverride').addEventListener('input',render);
+$('occOverride').addEventListener('input',render);
+$('usecase').addEventListener('change',()=>{state.sliderTouched=false;render();});
+$('mSlider').addEventListener('input',()=>{state.sliderTouched=true;render();});
+$('fSlider').addEventListener('input',()=>{state.sliderTouched=true;render();});
+
+loadURL();render();
+</script>
